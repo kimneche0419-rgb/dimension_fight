@@ -363,23 +363,6 @@ class GameManager:
         self.shake_amount = amount
         self.shake_timer  = frames
 
-    def _grant_death_rewards(self):
-        # ★ 이자나기 패시브 체크
-        if "izanagi" in self.owned_skills and self.player.skill_izanagi_ready:
-            from entities import ACTIVE_SKILLS
-            cd = ACTIVE_SKILLS["izanagi"]["cd"]
-            self.player.skill_izanagi_ready = False
-            self.player.skill_cooldowns["izanagi"] = cd
-            self.player.health = 50 # 절반 정도 회복하고 부활
-            self.notify("👁️ 현실은 재기록되었다... (이자나기 발동!)", 180)
-            self.screen_shake(30, 40)
-            self._burst(self.player.world_pos, (255,255,255), count=100, speed=20)
-            return
-
-        score = self.player.score
-        self.state = "DEATH"
-        self.high_score = max(self.high_score, score)
-
     def _update_camera(self):
         target = self.player.world_pos - Vector2(self.SW//2, self.SH//2)
         self.camera_offset += (target - self.camera_offset) * SETTINGS.camera_smooth
@@ -627,9 +610,6 @@ class GameManager:
                 if er.colliderect(player_wr):
                     actual = self.player.take_hit(15)
                     self.screen_shake(6,8)
-                    if self.player.health <= 0:
-                        self._grant_death_rewards()
-                        return
         if self.player.invincible > 0:
             self.player.invincible -= 1
 
@@ -1040,9 +1020,6 @@ class GameManager:
                         actual = self.player.take_hit(dmg)
                         self.screen_shake(6,8)
                         self.notify(f"피격! HP -{actual}" if actual>0 else "쉴드 흡수!", 50)
-                        if self.player.health <= 0:
-                            self._grant_death_rewards()
-                            return
         if self.player.invincible > 0:
             self.player.invincible -= 1
 
@@ -1054,9 +1031,6 @@ class GameManager:
                     self.screen_shake(5,6)
                     self.notify(f"피격! HP -{actual}" if actual>0 else "쉴드 흡수!", 50)
                     ep.kill()
-                    if self.player.health <= 0:
-                        self._grant_death_rewards()
-                        return
 
         for p in list(self.projectiles):
             p_r = pygame.Rect(p.world_pos.x-6, p.world_pos.y-6, 12,12)
@@ -1924,25 +1898,37 @@ class GameManager:
     #  DEATH REWARDS
     # ─────────────────────────────────────
     def _grant_death_rewards(self):
+        # ★ 이자나기 패시브 체크 (부활)
+        if "izanagi" in self.owned_skills and self.player.skill_izanagi_ready:
+            from entities import ACTIVE_SKILLS
+            cd = ACTIVE_SKILLS["izanagi"]["cd"]
+            self.player.skill_izanagi_ready = False
+            self.player.skill_cooldowns["izanagi"] = cd
+            self.player.health = 50 
+            self.notify("👁️ 현실은 재기록되었다... (이자나기 발동!)", 180)
+            self.screen_shake(30, 40)
+            self._burst(self.player.world_pos, (255,255,255), count=100, speed=20, life=60)
+            return
+
         # 보상 계산 (기존보다 상향된 계수 적용)
-        gold_from_score = int(self.player.score * 0.1) # 1000점당 100골드
-        gold_from_kills = self.player.kill_count * 5    # 처치당 5골드
-        gold_from_time  = int(self.game_time // 10)     # 1초당 6골드 (프레임 60fps 기준)
+        gold_from_score = int(self.player.score * 0.1) 
+        gold_from_kills = self.player.kill_count * 5    
+        gold_from_time  = int(self.game_time // 10)     
         
         total_gold = gold_from_score + gold_from_kills + gold_from_time
-        
-        # 다이아몬드: 보스 처치 수와 스코어 비례
         dia = min(100, (self.player.score // 10000) + (self.player.kill_count // 50))
         
         self.last_death_rewards = {
             "gold": total_gold,
             "dia":  dia,
             "score": self.player.score,
-            "time":  f"{int(self.game_time//3600):02d}:{int((self.game_time%3600)//60):02d}", # 초 단위 보정 필요시 수정
+            "time":  f"{int(self.game_time//3600):02d}:{int((self.game_time%3600)//60):02d}", 
             "kills": self.player.kill_count
         }
         self.gold     += total_gold
         self.diamonds += dia
+        self.high_score = max(self.high_score, self.player.score)
+        self.state = "DEATH"
         self._save_data()
 
     # ─────────────────────────────────────

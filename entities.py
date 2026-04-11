@@ -610,6 +610,8 @@ class Player(pygame.sprite.Sprite):
         for sk in self.skill_cooldowns:
             if self.skill_cooldowns[sk] > 0:
                 self.skill_cooldowns[sk] -= 1
+                if sk == "izanagi" and self.skill_cooldowns[sk] == 0:
+                    self.skill_izanagi_ready = True
 
         if mode == "SHIP":
             self._update_ship(keys, current_friction, mouse_pos)
