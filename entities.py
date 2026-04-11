@@ -104,6 +104,9 @@ active_skills = {
     "titan_form":      {"name": "진격의 거인",   "cost": 500, "currency": "diamond", "desc": "진격거: 거대화하여 무적 상태로 적을 짓밟음", "cd": 3000, "max_lvl": 5},
     "thunder_spear":   {"name": "뇌창",         "cost": 3500, "currency": "gold", "desc": "진격거: 강력한 폭발을 일으키는 투척 병기", "cd": 1000, "max_lvl": 10},
     "amaterasu":       {"name": "아마테라스",    "cost": 600, "currency": "diamond", "desc": "나루토: 영구적인 흑염으로 적을 불태움", "cd": 1800, "max_lvl": 5},
+    "hollow_purple":    {"name": "허식 자",      "cost": 1000, "currency": "diamond", "desc": "주술회전: 창과 적을 융합하여 전방 소멸", "cd": 2400, "max_lvl": 5, "type": "charge"},
+    "gomu_gatling":    {"name": "고무고무 가틀링", "cost": 4000, "currency": "gold", "desc": "원피스: 5초간 전방향 무차별 난타", "cd": 1800, "max_lvl": 10},
+    "izanagi":         {"name": "이자나기",      "cost": 1200, "currency": "diamond", "desc": "나루토: 사망 시 1회 고정 부활 (패시브)", "cd": 7200, "max_lvl": 3, "type": "passive"},
 }
 ACTIVE_SKILLS = active_skills
 
@@ -437,6 +440,14 @@ class Player(pygame.sprite.Sprite):
         # ★ 스킬 시스템
         self.active_skills   = []   # 현재 보유 스킬
         self.skill_cooldowns = {k: 0 for k in ACTIVE_SKILLS}
+        self.skill_use_count = {k: 0 for k in ACTIVE_SKILLS} # ★ 스킬 숙련도 추적
+        self.skill_vamp_timer = 0
+        self.skill_dmg_timer = 0
+        self.skill_stealth_timer = 0
+        self.skill_titan_timer = 0
+        self.skill_gatling_timer = 0 # ★ 고무고무 가틀링 타이머
+        self.skill_izanagi_ready = True # ★ 이자나기 사용 가능 여부
+        self.multiverse_type = "PRIME"
 
         self._speed_upg_mult = 1.0
         self._xp_upg_mult    = 1.0
@@ -478,6 +489,10 @@ class Player(pygame.sprite.Sprite):
             m *= (1.0 + self.dive_depth / 200.0)
         if self.dimension == "VOID":
             m *= form.get("void_bonus", 1.0)
+            
+        # ★ 멀티버스 데미지 보너스
+        if self.multiverse_type == "ABYSSAL": m *= 1.5
+        elif self.multiverse_type == "CYBER": m *= 1.1
         return m
 
     def get_speed_mult(self):
@@ -489,6 +504,10 @@ class Player(pygame.sprite.Sprite):
 
             # 잠수 중 이동속도 감소 (깊을수록 느림)
             base *= max(0.4, 1.0 - self.dive_depth * 0.004)
+            
+        # ★ 멀티버스 속도 보너스
+        if self.multiverse_type == "CYBER": base *= 1.2
+        elif self.multiverse_type == "GLITCH": base *= 1.15
         return base
 
     def get_dash_cd_mult(self):
@@ -583,6 +602,7 @@ class Player(pygame.sprite.Sprite):
         if self.skill_stealth_timer > 0: self.skill_stealth_timer -= 1
         if self.skill_vamp_timer > 0: self.skill_vamp_timer -= 1
         if self.skill_titan_timer > 0: self.skill_titan_timer -= 1
+        if self.skill_gatling_timer > 0: self.skill_gatling_timer -= 1
 
         if self.form_morph_t < 1.0: self.form_morph_t = min(1.0, self.form_morph_t + 0.06)
 
@@ -940,7 +960,7 @@ ENEMY_DATA = {
     "echo_phantom":   {"name":"에코 팬텀",  "hp":6.9,"speed":3.22,"size":26,"cp":(150,150,200),"cv":(200,100,255),"shape":"diamond","behavior":"zigzag","gem":3,"special":"dash"},
     "anomaly_core":        {"name":"이상 현상 코어","hp":34.5,"speed":1.03,"size":48,"cp":(100,160,220),"cv":(220,60,255),"shape":"circle","behavior":"orbit","gem":12,"special":"summon","spawn_progress":0.25},
     "dreadnought_construct":{"name":"드레드노트","hp":57.5,"speed":1.26,"size":58,"cp":(90,90,90),"cv":(160,0,0),"shape":"rect","behavior":"melee","gem":15,"special":"burst_shot","spawn_progress":0.50},
-    "echo_wraith":         {"name":"메아리 망령","hp":43.7,"speed":2.53,"size":44,"cp":(130,130,160),"cv":(50,255,50),"shape":"diamond","behavior":"zigzag","gem":15,"special":"clone","spawn_progress":0.70},
+    "echo_wraith":         {"name":"메아리 망령","hp":43.7,"speed":2.53,"size":26,"cp":(130,130,160),"cv":(50,255,50),"shape":"diamond","behavior":"zigzag","gem":15,"special":"clone","spawn_progress":0.70},
     "abyss_leviathan":     {"name":"심연의 리바이어던","hp":92.0,"speed":0.92,"size":70,"cp":(0,50,120),"cv":(0,150,255),"shape":"circle","behavior":"orbit","gem":25,"special":"burst_shot","spawn_progress":0.55},
     "null_colossus":       {"name":"공백 거신","hp":69.0,"speed":1.61,"size":64,"cp":(100,100,140),"cv":(180,50,255),"shape":"rect","behavior":"melee","gem":20,"special":"phase_boss","spawn_progress":0.60},
     "nexus_overmind":  {"name":"넥서스 오버마인드","hp":172.5,"speed":1.03,"size":80,"cp":(180,180,210),"cv":(255,0,255),"shape":"circle","behavior":"orbit","gem":40,"special":"phase_boss","phase_count":3,"spawn_progress":0.85},
@@ -974,6 +994,23 @@ ENEMY_DATA = {
     "spiral_master":   {"name":"나선 마스터","hp":60.0,"speed":1.50,"size":45,"cp":(0,100,200),"cv":(200,255,255),"shape":"triangle","behavior":"ranged","gem":22, "special":"spiral_shot"},
 }
 
+# ─────────────────────────────────────────
+#  COMBAT OVERHAUL: WEAK POINT
+# ─────────────────────────────────────────
+class WeakPoint:
+    def __init__(self, size):
+        self.offset = Vector2(random.randint(-size//4, size//4), random.randint(-size//4, size//4))
+        self.timer = 0
+        self.visible = True
+
+    def update(self, size):
+        self.timer += 1
+        if self.timer % 120 == 0: # 2초마다 위치 변경
+            self.offset = Vector2(random.randint(-size//3, size//3), random.randint(-size//3, size//3))
+
+    def check_hit(self, hit_pos, center_pos):
+        return (hit_pos - (center_pos + self.offset)).length() < 15
+
 
 # ─────────────────────────────────────────
 #  ENEMY CLASS
@@ -1000,9 +1037,19 @@ class Enemy(pygame.sprite.Sprite):
         self.name      = data["name"]
         self.is_mutant = data.get("mutant", False)
         self.special_timer = 0
+        self.flash_timer = 0
         self.phase     = 1
         self.orbit_angle = random.uniform(0,360)
-        self.flash_timer = 0
+        
+        # ★ 약점 시스템 (보스급 전용)
+        self.weak_point = None
+        if self.max_hp >= 100 or self.special == "phase_boss":
+            self.weak_point = WeakPoint(sz)
+            
+        # ★ Echo Shot 히스토리 추적 (COMBAT OVERHAUL TYPE-1)
+        self.pos_history = []
+        self.multiverse_type = "PRIME"
+            
         self._draw()
 
     def _draw(self):
@@ -1034,6 +1081,12 @@ class Enemy(pygame.sprite.Sprite):
             pygame.draw.polygon(self.image, cp, [(cx,2),(sz-2,cy),(cx,sz-2),(2,cy)])
             pygame.draw.polygon(self.image, white, [(cx,2),(sz-2,cy),(cx,sz-2),(2,cy)], 1)
             pygame.draw.circle(self.image, white, (cx,cy), 3) # 다이아몬드 코어
+
+        # ★ 약점 표시 (보라색 원형 코어)
+        if self.weak_point:
+            wx, wy = cx + self.weak_point.offset.x, cy + self.weak_point.offset.y
+            pygame.draw.circle(self.image, (255, 255, 255), (int(wx), int(wy)), 8, 1)
+            pygame.draw.circle(self.image, (255, 0, 0, 150), (int(wx), int(wy)), 5)
             
         if self.is_mutant:
             # 돌연변이 전용 테두리 및 코어 효과
@@ -1050,6 +1103,12 @@ class Enemy(pygame.sprite.Sprite):
 
     def update(self, player_world_pos, enemy_projectiles=None, dimension=None, all_enemies=None):
         self.special_timer += 1
+        if self.weak_point: self.weak_point.update(self.rect.width) # ★ 약점 동기화
+        
+        # ★ 히스토리 기록 (Echo Shot 용)
+        self.pos_history.append(Vector2(player_world_pos))
+        if len(self.pos_history) > 60: self.pos_history.pop(0)
+        
         self._do_behavior(player_world_pos, all_enemies)
         if enemy_projectiles is not None and dimension is not None:
             self._try_shoot(player_world_pos, enemy_projectiles, dimension)
@@ -1057,11 +1116,15 @@ class Enemy(pygame.sprite.Sprite):
 
     def _try_shoot(self, player_pos, eprojs, dimension):
         if self.dimension_type != dimension: return
+        
+        # ★ 멀티버스 연사속도 보정 (CYBER: 30% 더 자주 발사)
+        rate_mult = 0.7 if self.multiverse_type == "CYBER" else 1.0
+        
         d_vec = player_pos - self.world_pos
         dist  = d_vec.length()
-        if self.special == "ranged_shot" and self.special_timer % 90 == 0 and dist < 500:
+        if self.special == "ranged_shot" and self.special_timer % int(90 * rate_mult) == 0 and dist < 500:
             eprojs.add(EnemyProjectile(self.world_pos, d_vec.normalize(), dimension, color=(255,255,0), speed=6, dmg=8 + self.dmg_bonus))
-        if self.special == "burst_shot" and self.special_timer % 80 == 0:
+        if self.special == "burst_shot" and self.special_timer % int(80 * rate_mult) == 0:
             for a in range(0,360,45):
                 v = Vector2(math.cos(math.radians(a)), math.sin(math.radians(a)))
                 eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(255,80,0), speed=5, dmg=5 + self.dmg_bonus))
@@ -1181,6 +1244,11 @@ class Projectile(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.vel  = Vector2(direction).normalize()*speed if Vector2(direction).length()>0 else Vector2(0,-speed)
         self.life = 0
+        
+        # ★ 멀티버스 특수 효과 (GLITCH: 관통 확률 부여)
+        self.pierce = False
+        if getattr(self, "multiverse_type", "PRIME") == "GLITCH":
+            if random.random() < 0.4: self.pierce = True
 
     def update_screen_pos(self, camera_offset):
         self.rect.center = (int(self.world_pos.x-camera_offset.x),

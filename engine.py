@@ -247,6 +247,18 @@ class GameManager:
         self.reward_roulette_flash  = 0
         self.last_roulette_time     = 0   # ★ 룰렛 쿨타임용 (Unix Timestamp)
         
+        # ★ 멀티버스(Multiverse) 시스템
+        self.universe_type = "PRIME"
+        self.universe_timer = 0
+        self.universe_cycle = 7200 # 2분마다 전환 (120초 * 60프레임)
+        self.universes = {
+            "PRIME": {"name": "프라임 현실", "color": (100, 150, 255), "buff": "표준 차원", "effect": None},
+            "CYBER": {"name": "사이버 넷", "color": (255, 255, 0), "buff": "이동속도 +20% / 적 탄속 +20%", "effect": "cyber_glow"},
+            "ABYSSAL": {"name": "심연의 틈", "color": (150, 0, 255), "buff": "공격력 +50% / 시야 제한", "effect": "darkness"},
+            "GOLDEN": {"name": "황금의 도래", "color": (255, 200, 50), "buff": "보상 2배 / 최대 체력 절반", "effect": "gold_filter"},
+            "GLITCH": {"name": "글리치 월드", "color": (255, 50, 50), "buff": "무작위 대쉬 / 모든 사격 관통", "effect": "jitter"}
+        }
+        
         # ★ 사용자 프로필 (설정에서 변경 가능)
         self.pilot_name = "KIM"
         self.pilot_rank = "COMMANDER"
@@ -350,6 +362,23 @@ class GameManager:
     def screen_shake(self, amount=8, frames=10):
         self.shake_amount = amount
         self.shake_timer  = frames
+
+    def _grant_death_rewards(self):
+        # ★ 이자나기 패시브 체크
+        if "izanagi" in self.owned_skills and self.player.skill_izanagi_ready:
+            from entities import ACTIVE_SKILLS
+            cd = ACTIVE_SKILLS["izanagi"]["cd"]
+            self.player.skill_izanagi_ready = False
+            self.player.skill_cooldowns["izanagi"] = cd
+            self.player.health = 50 # 절반 정도 회복하고 부활
+            self.notify("👁️ 현실은 재기록되었다... (이자나기 발동!)", 180)
+            self.screen_shake(30, 40)
+            self._burst(self.player.world_pos, (255,255,255), count=100, speed=20)
+            return
+
+        score = self.player.score
+        self.state = "DEATH"
+        self.high_score = max(self.high_score, score)
 
     def _update_camera(self):
         target = self.player.world_pos - Vector2(self.SW//2, self.SH//2)
@@ -549,7 +578,16 @@ class GameManager:
                                  enemy.world_pos.y-enemy.rect.h//2,
                                  enemy.rect.w, enemy.rect.h)
                 if er.colliderect(p_r):
+                    # ★ 약점 시스템 타격 판정
+                    is_crit = False
+                    if enemy.weak_point and enemy.weak_point.check_hit(p.world_pos, enemy.world_pos):
+                        is_crit = True
+                    
                     dmg = int(p.dmg * self.player.get_dmg_mult())
+                    if is_crit: 
+                        dmg *= 3
+                        self.notify("💥 CRITICAL HIT!!", 40)
+                    
                     if enemy.take_damage(dmg):
                         # ★ 리프트 내 뇌창 폭발
                         if getattr(p, "special", None) == "thunder_spear":
@@ -562,7 +600,9 @@ class GameManager:
                         if enemy is self.rift_boss:
                             self.rift_boss = None
                         enemy.kill()
-                        self.player.score += 500
+                        r_pts = 500
+                        if getattr(self, "universe_type", "PRIME") == "GOLDEN": r_pts *= 2
+                        self.player.score += r_pts
                     if enemy.special != "phase_boss":
                         p.kill()
                     break
@@ -577,8 +617,6 @@ class GameManager:
                 ep.kill()
                 if self.player.health <= 0:
                     self._grant_death_rewards()
-                    self.state = "DEATH"
-                    self.high_score = max(self.high_score, self.player.score)
                     return
 
         if self.player.invincible <= 0:
@@ -591,8 +629,6 @@ class GameManager:
                     self.screen_shake(6,8)
                     if self.player.health <= 0:
                         self._grant_death_rewards()
-                        self.state = "DEATH"
-                        self.high_score = max(self.high_score, self.player.score)
                         return
         if self.player.invincible > 0:
             self.player.invincible -= 1
@@ -687,11 +723,33 @@ class GameManager:
     # ─────────────────────────────────────
     def update(self, events):
         self.mouse_pos = pygame.mouse.get_pos()
+        if self.freeze_timer > 0: self.freeze_timer -= 1
+        if hasattr(self, "skill_combo_timer") and self.skill_combo_timer > 0:
+            self.skill_combo_timer -= 1
+        else:
+            if hasattr(self, "skill_combo_list"): self.skill_combo_list = []
+            
+        # ★ 고무고무 가틀링 주먹 효과
+        if self.player and self.player.skill_gatling_timer > 0:
+            if self.player.skill_gatling_timer % 10 == 0:
+                for _ in range(3):
+                    angle = random.uniform(0,360)
+                    dist = random.uniform(50, 150)
+                    p_pos = self.player.world_pos + Vector2(math.cos(math.radians(angle))*dist, math.sin(math.radians(angle))*dist)
+                    self._burst(p_pos, (255, 180, 100), count=10, speed=5)
+                    for e in list(self.enemies):
+                        if (e.world_pos - p_pos).length() < 70:
+                            e.take_damage(25)
         if self.notify_timer > 0: self.notify_timer -= 1
         if self.shake_timer   > 0: self.shake_timer   -= 1
         if self.bh_flash_timer > 0: self.bh_flash_timer -= 1
         if self.roulette_flash > 0: self.roulette_flash -= 1
         if self.streak_flash_timer > 0: self.streak_flash_timer -= 1
+        
+        # ★ 글로벌 사망/부활 체크 (모든 상태에서 공통 적용)
+        if self.player and self.player.health <= 0 and self.state not in ["MENU", "SHOP", "DEATH"]:
+            self._grant_death_rewards()
+            if self.state == "DEATH": return
 
         if self.settings_open:
             for event in events:
@@ -822,8 +880,6 @@ class GameManager:
                 self.notify("⚠ 산소 부족! 수면으로 올라오세요!", 60)
             if self.player.health <= 0:
                 self._grant_death_rewards()
-                self.state = "DEATH"
-                self.high_score = max(self.high_score, self.player.score)
                 return
 
         # 잠수 중 심해 적 추가 소환
@@ -986,8 +1042,6 @@ class GameManager:
                         self.notify(f"피격! HP -{actual}" if actual>0 else "쉴드 흡수!", 50)
                         if self.player.health <= 0:
                             self._grant_death_rewards()
-                            self.state = "DEATH"
-                            self.high_score = max(self.high_score, self.player.score)
                             return
         if self.player.invincible > 0:
             self.player.invincible -= 1
@@ -1002,8 +1056,6 @@ class GameManager:
                     ep.kill()
                     if self.player.health <= 0:
                         self._grant_death_rewards()
-                        self.state = "DEATH"
-                        self.high_score = max(self.high_score, self.player.score)
                         return
 
         for p in list(self.projectiles):
@@ -1014,6 +1066,16 @@ class GameManager:
                                      enemy.world_pos.y-enemy.rect.h//2,
                                      enemy.rect.w, enemy.rect.h)
                     if er.colliderect(p_r):
+                        # ★ 약점 시스템 타격 판정
+                        is_crit = False
+                        if enemy.weak_point and enemy.weak_point.check_hit(p.world_pos, enemy.world_pos):
+                            is_crit = True
+                            
+                        dmg = int(p.dmg * self.player.get_dmg_mult())
+                        if is_crit: 
+                            dmg *= 3
+                            self.notify("💥 CRITICAL HIT!!", 40)
+                            
                         # ★ 뇌창 폭발 처리
                         if getattr(p, "special", None) == "thunder_spear":
                             pos = p.world_pos
@@ -1025,7 +1087,6 @@ class GameManager:
                                     e_near.take_damage(p.dmg)
                                     self._burst(e_near.world_pos, (255,255,255), count=5)
                         
-                        dmg = int(p.dmg * self.player.get_dmg_mult())
                         if enemy.take_damage(dmg):
                             data = ENEMY_DATA.get(enemy.etype, {})
                             col  = data.get("cp",(255,100,0)) if self.dimension=="PHYSICAL" else data.get("cv",(255,0,200))
@@ -1038,6 +1099,9 @@ class GameManager:
                             combo = self.player.kill_combo()
                             mult  = self.player.get_combo_multiplier()
                             pts   = int(enemy.gem_val * 10 * mult)
+                            # ★ 멀티버스 점수 보물 (GOLDEN 현실 보너스)
+                            if self.universe_type == "GOLDEN": pts *= 2
+                            
                             self.player.score += pts
                             if combo % 5 == 0 and combo >= 5:
                                 self.notify(f"COMBO ×{combo}!  ×{mult:.1f}", 90)
@@ -1049,8 +1113,9 @@ class GameManager:
                                 self._burst(enemy.world_pos, (255,220,0), count=30, speed=8, life=45)
                                 self.screen_shake(12, 15)
                             enemy.kill()
-                        if enemy.special != "phase_boss":
-                            p.kill()
+                        if not getattr(p, "pierce", False):
+                            if enemy.special != "phase_boss":
+                                p.kill()
                         break
 
         for gem in list(self.gems):
@@ -1074,6 +1139,14 @@ class GameManager:
                 item.kill()
 
         self.particles = [p for p in self.particles if p.update()]
+
+
+
+        # ★ 멀티버스 업데이트
+        self.universe_timer += 1
+        if self.universe_timer >= self.universe_cycle:
+            self.universe_timer = 0
+            self._shift_universe()
 
         if self.game_time > self.current_chapter.duration * 60:
             final_bosses = ["void_god","abyss_sovereign","nexus_overmind","abyssal_tyrant"]
@@ -1113,6 +1186,25 @@ class GameManager:
                         return
             self.high_score = max(self.high_score, self.player.score)
             self.state = "WIN"
+
+    def _shift_universe(self):
+        old = self.universe_type
+        choices = [u for u in self.universes.keys() if u != old]
+        self.universe_type = random.choice(choices)
+        u_data = self.universes[self.universe_type]
+        self.notify(f"🌌 멀티버스 전이! [{u_data['name']}]", 240)
+        self.screen_shake(30, 45)
+        self._burst(self.player.world_pos, u_data["color"], count=150, speed=15, life=100)
+        
+        # 유니버스 상태 동기화
+        if self.player: self.player.multiverse_type = self.universe_type
+        for e in self.enemies: e.multiverse_type = self.universe_type
+        
+        # 유니버스별 즉각적인 수치 조정
+        if self.universe_type == "GOLDEN":
+            self.player.health = min(self.player.health, self.player.max_health // 2)
+        elif self.universe_type == "GLITCH":
+            self.screen_shake(40, 60)
 
     # ─────────────────────────────────────
     #  SETTINGS
@@ -1550,6 +1642,11 @@ class GameManager:
         from entities import ACTIVE_SKILLS
         skill_data = ACTIVE_SKILLS[skey]
         
+        # ★ 공명(Resonance) 시스템 판정
+        if not hasattr(self, "skill_combo_list"): 
+            self.skill_combo_list = []
+            self.skill_combo_timer = 0
+            
         if self.player.skill_cooldowns[skey] > 0:
             cd_sec = self.player.skill_cooldowns[skey] / 60
             self.notify(f"⚠ {skill_data['name']} 재사용 대기 중! ({cd_sec:.1f}s)", 60)
@@ -1671,6 +1768,29 @@ class GameManager:
             for e in target_enemies:
                 if (e.world_pos - m_pos).length() < 150 + lvl * 20:
                     e.take_damage(dmg)
+
+        elif skey == "hollow_purple":
+            # 주술회전: 허식 자 (2단계 공격)
+            self.notify(f"🟣 허식 「자(茈)」!! (Lv.{lvl})", 180)
+            self.screen_shake(25, 30)
+            fire_dir = self.player.get_fire_direction(self.mouse_pos)
+            # 거대 빔 형태 투사체
+            for i in range(10):
+                p_pos = self.player.world_pos + fire_dir * (i * 40)
+                self._burst(p_pos, (180, 0, 255), count=20, speed=10)
+                for e in list(self.enemies):
+                    if (e.world_pos - p_pos).length() < 100 + lvl * 10:
+                        e.take_damage(200 + lvl * 100)
+                        
+        elif skey == "gomu_gatling":
+            # 원피스: 고무고무 가틀링 (5초간 전방향 난타)
+            self.notify(f"👊 고무고무 기간트 가틀링!!", 300)
+            self.player.skill_gatling_timer = 300
+            
+        elif skey == "izanagi":
+            # 이자나기는 패시브이므로 발동 시 쿨타임만 적용 (현재는 액티브로 눌러도 아무일 없음)
+            self.notify("👁️ 이자나기가 활성화되어 있습니다 (패시브)", 60)
+            return
             
         # 스킬 사용 후 쿨타임 적용
         self.player.skill_cooldowns[skey] = skill_data["cd"]
@@ -2146,6 +2266,15 @@ class GameManager:
             bg = tuple(max(0, int(c * (1 - d * 0.7))) for c in bg)
 
         self.screen.fill(bg)
+        
+        # ★ 멀티버스 시선 효과 적용 전 단계
+        if self.universe_type == "ABYSSAL":
+            # 심연 차원: 시야 제한 마스크 준비 (나중에 덮음)
+            pass
+        elif self.universe_type == "GLITCH":
+            # 글리치 분열: 카메라 강제 흔들림 효과 추가
+            shake.x += random.uniform(-4, 4)
+            shake.y += random.uniform(-4, 4)
         self.star_field.draw(self.screen, self.camera_offset,
                               self.dimension, abyss=self.abyss_active)
 
@@ -2346,17 +2475,43 @@ class GameManager:
             c = int(min(255, 80+self.player.combo*7))
             self.draw_text(f"COMBO ×{self.player.combo}  ×{mult:.1f}", (660,80), 22, (255,c,50))
 
-        # ★ 연속킬 streak 텍스트
-        if self.streak_flash_timer > 0:
-            t = self.streak_flash_timer / 45
-            size = int(28 + 14 * t)
-            col_s = (255, int(200*t), 0)
-            self.draw_text(f"🔥 {self.streak_flash_count} KILL STREAK!", (400, 260), size, col_s)
-
         # ★ 과부하 타이머 표시
         if self.player.overload_timer > 0:
             ot = self.player.overload_timer
             self.draw_text(f"⚡ OVERLOAD {ot//60}.{(ot%60)//6}s", (400, 80), 24, (255,150,0))
+            
+        # ★ 멀티버스 상태 표시 (HUD 좌상단)
+        u_data = self.universes[self.universe_type]
+        self.draw_text(f"🌌 {u_data['name']}", (10, 85), 18, u_data["color"], align="left")
+        self.draw_text(f"MOD: {u_data['buff']}", (10, 105), 13, (180, 180, 220), align="left")
+
+        # ── 멀티버스 시각 오버레이 (최종 단계) ──
+        if self.universe_type == "CYBER":
+            # 스캔라인 효과
+            for y in range(0, 600, 4):
+                pygame.draw.line(self.screen, (255, 255, 0, 15), (0, y), (800, y))
+            try:
+                ct = pygame.Surface((800,600), pygame.SRCALPHA)
+                ct.fill((255, 255, 0, 10))
+                self.screen.blit(ct, (0,0))
+            except: pass
+        elif self.universe_type == "GOLDEN":
+            try:
+                gt = pygame.Surface((800,600), pygame.SRCALPHA)
+                gt.fill((255, 200, 0, 20))
+                self.screen.blit(gt, (0,0), special_flags=pygame.BLEND_RGB_ADD)
+            except: pass
+        elif self.universe_type == "ABYSSAL":
+            # 시야 제한 (Vignette)
+            try:
+                mask = pygame.Surface((800,600), pygame.SRCALPHA)
+                mask.fill((0, 0, 0, 245))
+                pygame.draw.circle(mask, (0,0,0,0), (400,300), 220)
+                self.screen.blit(mask, (0,0))
+            except: pass
+        elif self.universe_type == "GLITCH" and (self.game_time % 10 < 3):
+            shift_x = random.randint(-15, 15)
+            self.screen.blit(self.screen, (shift_x, 0))
 
     # ─────────────────────────────────────
     def _draw_dive_ui(self):
