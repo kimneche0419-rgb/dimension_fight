@@ -7,7 +7,6 @@ import math
 #  GLOBAL SETTINGS  (런타임 감도/물리 설정)
 # ─────────────────────────────────────────
 class GameSettings:
-    """모든 이동·물리 관련 설정을 담는 싱글턴"""
     _instance = None
 
     def __new__(cls):
@@ -17,23 +16,23 @@ class GameSettings:
         return cls._instance
 
     def _init_defaults(self):
-        # SHIP 모드
-        self.ship_accel        = 0.38   # 선박 가속력  (0.10 ~ 1.0)
-        self.ship_max_speed    = 5.5    # 선박 최대속도 (2.0 ~ 12.0)
-        self.ship_friction     = 0.82   # 선박 마찰배율 (0.50 ~ 0.99)  값 낮을수록 빨리 멈춤
-        self.ship_rotate_speed = 0.18   # 마우스 추종 회전속도 (0.05 ~ 0.40)
+        # SHIP 모드  ── ★ 속도 대폭 상향 ★
+        self.ship_accel        = 0.80   # ↑ 0.38→0.80
+        self.ship_max_speed    = 11.0   # ↑ 5.5→11.0
+        self.ship_friction     = 0.90   # ↑ 0.82→0.90 (미끄러짐 증가)
+        self.ship_rotate_speed = 0.28   # ↑ 0.18→0.28
 
         # HUMAN 모드
-        self.human_accel       = 0.9    # 인간 가속력  (0.20 ~ 2.0)
-        self.human_base_speed  = 1.5    # 인간 기본속도 (0.5 ~ 4.0)
+        self.human_accel       = 1.6    # ↑ 0.9→1.6
+        self.human_base_speed  = 3.0    # ↑ 1.5→3.0
 
-        # DASH
-        self.dash_speed        = 20     # 대쉬 거리속도 (8 ~ 40)
-        self.dash_frames       = 10     # 대쉬 지속 프레임 (5 ~ 20)
-        self.dash_cooldown     = 50     # 대쉬 쿨타임 프레임 (20 ~ 120)
+        # DASH  ── ★ 대쉬 강화 ★
+        self.dash_speed        = 32     # ↑ 20→32
+        self.dash_frames       = 12     # ↑ 10→12
+        self.dash_cooldown     = 35     # ↓ 50→35 (더 자주)
 
         # 카메라
-        self.camera_smooth     = 0.12   # 카메라 부드러움 (0.05 ~ 0.40) 높을수록 빠르게 따라감
+        self.camera_smooth     = 0.14   # 살짝 빠르게
 
     LABELS = {
         "ship_accel":        ("선박 가속력",       0.10, 1.00, 0.05),
@@ -58,33 +57,60 @@ class GameSettings:
     def reset_defaults(self):
         self._init_defaults()
 
-
-# 전역 싱글턴
 SETTINGS = GameSettings()
 
 # ─────────────────────────────────────────
 #  WEAPONS
 # ─────────────────────────────────────────
 WEAPONS = {
-    "laser":      {"name":"Laser",     "cooldown":18,"speed":14,"dmg":1, "color_p":(0,255,255),  "color_v":(255,0,255),  "size":5, "spread":0,  "count":1},
-    "shotgun":    {"name":"Shotgun",   "cooldown":38,"speed":10,"dmg":2, "color_p":(255,200,0),  "color_v":(255,100,0),  "size":4, "spread":22, "count":6},
-    "sniper":     {"name":"Sniper",    "cooldown":55,"speed":22,"dmg":4, "color_p":(200,255,200),"color_v":(100,255,100),"size":3, "spread":0,  "count":1},
-    "gatling":    {"name":"Gatling",   "cooldown":5, "speed":11,"dmg":1, "color_p":(255,150,50), "color_v":(200,50,255), "size":4, "spread":10, "count":1},
-    "rocket":     {"name":"Rocket",   "cooldown":75,"speed":8, "dmg":6, "color_p":(255,80,80),  "color_v":(180,0,180),  "size":8, "spread":0,  "count":1},
-    "robot_arm":  {"name":"RobotArm", "cooldown":14,"speed":12,"dmg":2, "color_p":(100,200,255),"color_v":(200,100,255),"size":6, "spread":5,  "count":2},
-    "plasma":     {"name":"Plasma",   "cooldown":28,"speed":9, "dmg":3, "color_p":(180,0,255),  "color_v":(0,255,180),  "size":9, "spread":5,  "count":3},
-    "railgun":    {"name":"Railgun",  "cooldown":90,"speed":28,"dmg":8, "color_p":(255,255,0),  "color_v":(255,100,0),  "size":4, "spread":0,  "count":1},
-    "void_cannon":{"name":"VoidCann", "cooldown":45,"speed":7, "dmg":5, "color_p":(80,0,180),   "color_v":(0,220,255),  "size":12,"spread":0,  "count":1},
-    "abyss_beam": {"name":"AbysBeam", "cooldown":8, "speed":16,"dmg":2, "color_p":(0,80,200),   "color_v":(200,0,100),  "size":5, "spread":2,  "count":2},
+    "laser":       {"name":"P-11 플라즈마", "cooldown":18,"speed":14,"dmg":1, "color_p":(0,255,255),  "color_v":(255,0,255),  "size":5, "spread":0,  "count":1},
+    "shotgun":     {"name":"보이드 블릿저",   "cooldown":38,"speed":10,"dmg":2, "color_p":(255,200,0),  "color_v":(255,100,0),  "size":4, "spread":22, "count":6},
+    "sniper":      {"name":"컨티뉴엄 레일",    "cooldown":55,"speed":22,"dmg":4, "color_p":(200,255,200),"color_v":(100,255,200),"size":3, "spread":0,  "count":1},
+    "gatling":     {"name":"파티클 슈레더",   "cooldown":5, "speed":11,"dmg":1, "color_p":(255,150,50), "color_v":(200,50,255), "size":4, "spread":10, "count":1},
+    "rocket":      {"name":"중력 붕괴탄",    "cooldown":75,"speed":8, "dmg":6, "color_p":(255,80,80),  "color_v":(180,0,180),  "size":8, "spread":0,  "count":1},
+    "robot_arm":   {"name":"드론 센티넬",  "cooldown":14,"speed":12,"dmg":2, "color_p":(100,200,255),"color_v":(200,100,255),"size":6, "spread":5,  "count":2},
+    "plasma":      {"name":"태양점 방사기",    "cooldown":28,"speed":9, "dmg":3, "color_p":(180,0,255),  "color_v":(0,255,180),  "size":9, "spread":5,  "count":3},
+    "railgun":     {"name":"오메가 레일건",     "cooldown":90,"speed":28,"dmg":8, "color_p":(255,255,0),  "color_v":(255,100,0),  "size":4, "spread":0,  "count":1},
+    "void_cannon": {"name":"심해 싱귤래리티",  "cooldown":45,"speed":7, "dmg":5, "color_p":(80,0,180),   "color_v":(0,220,255),  "size":12,"spread":0,  "count":1},
+    "abyss_beam":  {"name":"고압 버스트",  "cooldown":8, "speed":16,"dmg":2, "color_p":(0,80,200),   "color_v":(200,0,100),  "size":5, "spread":2,  "count":2},
+    "shockwave":   {"name":"노바 임팩트", "cooldown":60,"speed":3, "dmg":8, "color_p":(255,180,0),  "color_v":(0,255,255),  "size":18,"spread":0,  "count":1},
+    "spiral_laser":{"name":"네뷸라 스파이럴", "cooldown":10,"speed":13,"dmg":2, "color_p":(255,80,200), "color_v":(80,255,80),  "size":6, "spread":45, "count":4},
 }
-WEAPON_ORDER        = ["laser","shotgun","sniper","gatling","rocket","robot_arm","plasma","railgun","void_cannon","abyss_beam"]
-WEAPON_UNLOCK_LEVEL = [1,      3,        5,       8,        12,      16,         20,      25,       30,           35]
+WEAPON_ORDER        = ["laser","shotgun","sniper","gatling","rocket","robot_arm","plasma","railgun","void_cannon","abyss_beam","shockwave","spiral_laser"]
+WEAPON_UNLOCK_LEVEL = [1,      3,        5,       8,        12,      16,         20,      25,       30,           35,          40,          45]
 
 # ─────────────────────────────────────────
-#  SHIP FORMS  (우주선 변형)
+#  PERSISTENT UPGRADES & SKILLS
 # ─────────────────────────────────────────
+PERSISTENT_UPGRADES = {
+    "shield_boost": {"name": "강화 쉴드", "cost": 50, "currency": "gold", "desc": "최대 쉴드 +5", "max_lvl": 10},
+    "speed_boost":  {"name": "엔진 오버클럭", "cost": 100, "currency": "gold", "desc": "이동 속도 +3%", "max_lvl": 10},
+    "hp_boost":     {"name": "선체 보강", "cost": 80, "currency": "gold", "desc": "최대 HP +10", "max_lvl": 10},
+    "xp_bonus":     {"name": "신경 링크",      "cost": 5, "currency": "diamond", "desc": "경험치 획득 +5%", "max_lvl": 5},
+    "dash_cdr":     {"name": "플럭스 커패시터",   "cost": 12, "currency": "diamond", "desc": "대쉬 쿨타임 -5%", "max_lvl": 10},
+    "dmg_boost":    {"name": "오메가 코어",       "cost": 15, "currency": "diamond", "desc": "공격력 +10%", "max_lvl": 5},
+}
+
+active_skills = {
+    "nova_blast":      {"name": "노바 블래스트",   "cost": 2000, "currency": "gold", "desc": "주변 모든 적에게 강력한 광역 데미지", "cd": 600, "max_lvl": 10},
+    "time_warp":       {"name": "타임 워프",    "cost": 50, "currency": "diamond", "desc": "시간을 왜곡하여 모든 적의 속도 감소", "cd": 1200, "max_lvl": 5},
+    "vampirism":       {"name": "뱀파이어리즘",    "cost": 100, "currency": "diamond", "desc": "적 사살 시 일정량 체력 회복 (지속 효과)", "cd": 1800, "max_lvl": 5},
+    "shield_overload": {"name": "쉴드 오버로드",   "cost": 1500, "currency": "gold", "desc": "쉴드 즉시 완충 및 5초간 공격력 +50%", "cd": 900, "max_lvl": 10},
+    "gravity_surge":   {"name": "중력 서지",      "cost": 80, "currency": "diamond", "desc": "마우스 위치에 5초간 블랙홀 생성", "cd": 1500, "max_lvl": 8},
+    "stealth_cloak":   {"name": "스텔스 클로킹",   "cost": 120, "currency": "diamond", "desc": "5초간 무적 및 이동 속도 대폭 증가", "cd": 2000, "max_lvl": 5},
+    "shadow_extraction":{"name": "그림자 추출",    "cost": 250, "currency": "diamond", "desc": "나혼렙: 그림자 병사를 소환하여 함께 전투", "cd": 2400, "max_lvl": 5},
+    "getsuga_tensho":  {"name": "월아천충",      "cost": 3000, "currency": "gold", "desc": "블리치: 거대한 보이드 에너지를 방출", "cd": 800, "max_lvl": 10},
+    "infinite_void":   {"name": "무량공처",      "cost": 400, "currency": "diamond", "desc": "주술회전: 모든 적을 빙결시키고 에너지를 속박", "cd": 3600, "max_lvl": 3},
+    "titan_form":      {"name": "진격의 거인",   "cost": 500, "currency": "diamond", "desc": "진격거: 거대화하여 무적 상태로 적을 짓밟음", "cd": 3000, "max_lvl": 5},
+    "thunder_spear":   {"name": "뇌창",         "cost": 3500, "currency": "gold", "desc": "진격거: 강력한 폭발을 일으키는 투척 병기", "cd": 1000, "max_lvl": 10},
+    "amaterasu":       {"name": "아마테라스",    "cost": 600, "currency": "diamond", "desc": "나루토: 영구적인 흑염으로 적을 불태움", "cd": 1800, "max_lvl": 5},
+}
+ACTIVE_SKILLS = active_skills
+
+
+
 # ─────────────────────────────────────────
-#  SHIP COLOR PALETTES  (플레이어 색상 선택)
+#  SHIP FORMS
 # ─────────────────────────────────────────
 SHIP_COLORS = [
     {"name": "시안",      "key": "cyan",    "color_p": (0,255,255),   "color_v": (255,0,255)},
@@ -102,33 +128,33 @@ SHIP_FORMS = {
         "name": "전투기 (Fighter)",
         "color_p": (0,255,255), "color_v": (255,0,255),
         "desc": "기본형 · 균형 잡힌 성능",
-        "speed_mult": 1.0, "dmg_mult": 1.0, "cd_mult": 1.0,
-        # 폴리곤 포인트 (36x36 기준)
+        "speed_mult": 1.1, "dmg_mult": 1.1, "cd_mult": 1.0,
         "poly": [(18,0),(36,36),(18,26),(0,36)],
         "engine_pos": [(18,30)], "engine_r": 4,
     },
     "cruiser": {
         "name": "순양함 (Cruiser)",
         "color_p": (80,200,255), "color_v": (200,80,255),
-        "desc": "넓은 날개 · 탄 2발 추가",
-        "speed_mult": 0.8, "dmg_mult": 1.0, "cd_mult": 0.9,
+        "desc": "방어 성능 특화 · 탄 2발 추가 · 이동속도 -20%",
+        "speed_mult": 0.8, "dmg_mult": 1.0, "cd_mult": 0.85,
         "poly": [(18,0),(36,20),(30,36),(18,28),(6,36),(0,20)],
         "engine_pos": [(8,32),(28,32)], "engine_r": 3,
+        "hp_bonus": 50,
     },
     "stealth": {
         "name": "스텔스 (Stealth)",
         "color_p": (120,120,180), "color_v": (180,60,255),
-        "desc": "얇고 날렵 · 대쉬 쿨타임 -30%",
-        "speed_mult": 1.3, "dmg_mult": 0.8, "cd_mult": 1.1,
+        "desc": "극강의 기동성 · 대쉬 쿨타임 -40% · 낮음 데미지 -20%",
+        "speed_mult": 1.45, "dmg_mult": 0.8, "cd_mult": 1.1,
         "poly": [(18,0),(28,36),(18,22),(8,36)],
         "engine_pos": [(18,34)], "engine_r": 3,
-        "dash_mult": 0.7,
+        "dash_mult": 0.6,
     },
     "dreadnought": {
         "name": "드레드노트 (Dreadnought)",
         "color_p": (255,80,80), "color_v": (255,160,0),
-        "desc": "무거운 전함 · 데미지 ×2 · 느림",
-        "speed_mult": 0.6, "dmg_mult": 2.0, "cd_mult": 0.8,
+        "desc": "화력 집중 · 데미지 ×2.2 · 극도로 느림(-45%)",
+        "speed_mult": 0.55, "dmg_mult": 2.2, "cd_mult": 0.75,
         "poly": [(18,0),(36,12),(36,30),(24,36),(12,36),(0,30),(0,12)],
         "engine_pos": [(10,34),(18,36),(26,34)], "engine_r": 4,
     },
@@ -155,8 +181,9 @@ SHIP_FORMS = {
 # ─────────────────────────────────────────
 #  PARTICLE
 # ─────────────────────────────────────────
-class Particle:
+class Particle(pygame.sprite.Sprite):
     def __init__(self, pos, vel, color, life, size=3):
+        super().__init__()
         self.pos      = Vector2(pos)
         self.vel      = Vector2(vel)
         self.color    = list(color)[:3]
@@ -186,26 +213,26 @@ class Particle:
 
 
 # ─────────────────────────────────────────
-#  BLACKHOLE  (차원 이동 시 확률 생성)
+#  BLACKHOLE
 # ─────────────────────────────────────────
-class Blackhole:
-    """블랙홀 — 가까운 적/탄 흡수, 플레이어 흡인, 60초 후 소멸
-       소멸 시 '심해 차원(ABYSS)' 1분간 활성화 이벤트 발생"""
+class Blackhole(pygame.sprite.Sprite):
     def __init__(self, world_pos):
+        super().__init__()
         self.world_pos  = Vector2(world_pos)
-        self.radius     = 0          # 성장 반경
+        self.image = pygame.Surface((1,1), pygame.SRCALPHA) # Placeholder
+        self.rect = self.image.get_rect()
+        self.radius     = 0
         self.max_radius = 90
         self.age        = 0
-        self.max_age    = 3600       # 60초
+        self.max_age    = 3600
         self.alive      = True
         self.spin_angle = 0
-        self.pull_range = 350        # 인력 범위
+        self.pull_range = 350
         self.pull_force = 0.18
 
     def update(self):
         self.age += 1
         self.spin_angle = (self.spin_angle + 3) % 360
-        # 성장 → 유지 → 축소
         if self.age < 120:
             self.radius = int(self.max_radius * self.age / 120)
         elif self.age > self.max_age - 120:
@@ -217,7 +244,6 @@ class Blackhole:
             self.alive = False
 
     def apply_pull(self, world_pos, vel):
-        """인력 계산 반환 (pos 인수, vel 수정)"""
         d = self.world_pos - world_pos
         dist = d.length()
         if 0 < dist < self.pull_range:
@@ -230,7 +256,6 @@ class Blackhole:
         cy = int(self.world_pos.y - camera_offset.y)
         if not (-120 <= cx <= 920 and -120 <= cy <= 720):
             return
-        # 외곽 인력 링 (점선)
         for i in range(8):
             a = self.spin_angle + i * 45
             lx = cx + int(math.cos(math.radians(a)) * self.pull_range * 0.7)
@@ -242,7 +267,6 @@ class Blackhole:
                 surface.blit(s, (lx-3, ly-3))
             except Exception:
                 pass
-        # 외곽 링들
         for ri, (rad, alpha, col) in enumerate([
             (self.radius+30, 60,  (100,0,200)),
             (self.radius+15, 100, (160,0,255)),
@@ -254,17 +278,14 @@ class Blackhole:
                 surface.blit(s, (cx-rad-2, cy-rad-2))
             except Exception:
                 pass
-        # 코어 (검은 원)
         r = max(1, self.radius)
         try:
             s = pygame.Surface((r*2+2, r*2+2), pygame.SRCALPHA)
             pygame.draw.circle(s, (0,0,0,240), (r+1,r+1), r)
-            # 중심 빛
             pygame.draw.circle(s, (255,100,255,200), (r+1,r+1), max(1,r//5))
             surface.blit(s, (cx-r-1, cy-r-1))
         except Exception:
             pass
-        # 나선 팔
         for arm in range(3):
             base_angle = self.spin_angle * 2 + arm * 120
             for step in range(20):
@@ -280,7 +301,6 @@ class Blackhole:
                     surface.blit(ps, (px-2, py-2))
                 except Exception:
                     pass
-        # 수명 표시
         if self.age < self.max_age - 60:
             remain = (self.max_age - self.age) // 60
             try:
@@ -295,12 +315,16 @@ class Blackhole:
 #  PICKUP ITEM
 # ─────────────────────────────────────────
 ITEM_DATA = {
-    "hp":        {"color": (0,255,80),    "label": "HP+30"},
-    "shield":    {"color": (0,180,255),   "label": "SHIELD"},
-    "speed":     {"color": (255,100,255), "label": "SPD"},
-    "ammo":      {"color": (255,140,0),   "label": "AMMO"},
-    "ship_form": {"color": (255,220,50),  "label": "FORM"},
+    "hp":          {"color": (0,255,80),    "label": "체력회복"},
+    "shield":      {"color": (0,180,255),   "label": "쉴드보완"},
+    "speed":       {"color": (255,100,255), "label": "속도향상"},
+    "ammo":        {"color": (255,140,0),   "label": "탄약보급"},
+    "ship_form":   {"color": (255,220,50),  "label": "기급변형"},
+    "abyss_crystal":{"color":(0,220,255),   "label": "심해결정"},
+    "crystal":     {"color": (255,255,255), "label": "크리스탈"},
+    "overload":    {"color": (255,60,0),    "label": "과부하"},
 }
+
 
 class PickupItem(pygame.sprite.Sprite):
     def __init__(self, world_pos, itype="hp"):
@@ -314,6 +338,15 @@ class PickupItem(pygame.sprite.Sprite):
         if itype == "ship_form":
             pygame.draw.polygon(self.image, c, [(9,0),(18,10),(14,18),(4,18),(0,10)])
             pygame.draw.circle(self.image, (255,255,255), (9,9), 4, 1)
+        elif itype == "abyss_crystal":
+            # 육각형 결정
+            pts = [(9+int(8*math.cos(math.radians(60*i-30))),
+                    9+int(8*math.sin(math.radians(60*i-30)))) for i in range(6)]
+            pygame.draw.polygon(self.image, c, pts)
+            pygame.draw.polygon(self.image, (255,255,255), pts, 1)
+        elif itype == "overload":
+            pygame.draw.polygon(self.image, c, [(9,0),(18,18),(0,18)])
+            pygame.draw.circle(self.image, (255,200,0), (9,9), 4)
         else:
             pygame.draw.rect(self.image, c, (0,0,sz,sz), border_radius=5)
             pygame.draw.rect(self.image, (255,255,255), (0,0,sz,sz), 1, border_radius=5)
@@ -362,26 +395,61 @@ class Player(pygame.sprite.Sprite):
         self.dash_cd     = 0
         self.dash_timer  = 0
         self.dash_dir    = Vector2(0,0)
-        self.DASH_SPEED  = 20
-        self.DASH_FRAMES = 10
-        self.DASH_CD     = 50
+        self.DASH_SPEED  = 32
+        self.DASH_FRAMES = 12
+        self.DASH_CD     = 35
 
-        self.speed_boost = 0
-        self.weapon_key  = "laser"
+        self.speed_boost   = 0
+        self.weapon_key    = "laser"
         self.unlocked_weapons = ["laser"]
-        self._cd_bonus   = 0
+        self._cd_bonus     = 0
 
-        # 우주선 변형
-        self.ship_form     = "fighter"
-        self.form_morph_t  = 0     # 변형 애니메이션 0→1
-        self.form_prev     = "fighter"
+        self.ship_form      = "fighter"
+        self.form_morph_t   = 0
+        self.form_prev      = "fighter"
         self.unlocked_forms = ["fighter"]
 
-        # 우주선 색상 커스텀
-        self.ship_color_key = "cyan"   # SHIP_COLORS key
+        self.ship_color_key = "cyan"
 
-        # 심해 차원 버프
-        self.abyss_mode = False   # ABYSS 차원 활성 시
+        self.abyss_mode     = False
+
+        # ★ 심해 잠수 시스템
+        self.dive_active    = False   # 잠수 중
+        self.dive_depth     = 0       # 현재 잠수 깊이 (0~100)
+        self.dive_max       = 100
+        self.dive_oxygen    = 300     # 산소 (프레임)
+        self.dive_max_oxygen= 300
+        self.dive_damage_cd = 0       # 산소 0일 때 데미지 쿨
+
+        # ★ 과부하 시스템
+        self.overload_timer = 0       # >0 이면 과부하 활성
+
+        # ★ 연속 킬 streak (새 콤보 이펙트용)
+        self.streak_kills   = 0
+        self.streak_timer   = 0
+
+        # ★ 화폐 시스템 (금화, 다이아몬드)
+        self.gold           = 0
+        self.diamonds       = 0
+        self.crystals       = 0
+        self.upgrades       = {k: 0 for k in PERSISTENT_UPGRADES}
+
+        # ★ 스킬 시스템
+        self.active_skills   = []   # 현재 보유 스킬
+        self.skill_cooldowns = {k: 0 for k in ACTIVE_SKILLS}
+
+        self._speed_upg_mult = 1.0
+        self._xp_upg_mult    = 1.0
+        self._dash_cdr_mult  = 1.0
+        self._dmg_upg_mult   = 1.0
+        
+        # 스킬별 타이머
+        self.skill_dmg_timer     = 0
+        self.skill_stealth_timer = 0
+        self.skill_vamp_timer    = 0
+        self.skill_titan_timer   = 0
+
+
 
     @property
     def weapon(self):
@@ -391,24 +459,45 @@ class Player(pygame.sprite.Sprite):
     def weapon_cooldown(self):
         form  = SHIP_FORMS.get(self.ship_form, SHIP_FORMS["fighter"])
         cd_m  = form.get("cd_mult", 1.0)
-        return max(3, int(self.weapon["cooldown"] * cd_m) - self._cd_bonus * 2)
+        base  = max(3, int(self.weapon["cooldown"] * cd_m) - self._cd_bonus * 2)
+        if self.overload_timer > 0:
+            base = max(2, base // 2)   # 과부하: 사격속도 2배
+        return base
 
     def get_dmg_mult(self):
         form = SHIP_FORMS.get(self.ship_form, SHIP_FORMS["fighter"])
         m = form.get("dmg_mult", 1.0)
-        if self.abyss_mode:
-            m *= 1.3
+        if hasattr(self, "_dmg_upg_mult"):
+            m *= self._dmg_upg_mult
+        if self.skill_dmg_timer > 0:
+            m *= 1.5   # 스킬 데미지 버프
+        if self.abyss_mode: m *= 1.3
+        if self.overload_timer > 0: m *= 2.5   # 과부하: 데미지 2.5배
+        if self.dive_active:
+            # 잠수 깊이에 따라 데미지 보너스 (최대 +50%)
+            m *= (1.0 + self.dive_depth / 200.0)
         if self.dimension == "VOID":
             m *= form.get("void_bonus", 1.0)
         return m
 
     def get_speed_mult(self):
         form = SHIP_FORMS.get(self.ship_form, SHIP_FORMS["fighter"])
-        return form.get("speed_mult", 1.0)
+        base = form.get("speed_mult", 1.0)
+        if hasattr(self, "_speed_upg_mult"):
+            base *= self._speed_upg_mult
+        if self.dive_active:
+
+            # 잠수 중 이동속도 감소 (깊을수록 느림)
+            base *= max(0.4, 1.0 - self.dive_depth * 0.004)
+        return base
 
     def get_dash_cd_mult(self):
         form = SHIP_FORMS.get(self.ship_form, SHIP_FORMS["fighter"])
-        return form.get("dash_mult", 1.0)
+        m = form.get("dash_mult", 1.0)
+        if hasattr(self, "_dash_cdr_mult"):
+            m *= self._dash_cdr_mult
+        return m
+
 
     def check_unlock(self):
         newly = None
@@ -428,18 +517,15 @@ class Player(pygame.sprite.Sprite):
                 break
 
     def morph_to(self, form_key):
-        if form_key not in SHIP_FORMS:
-            return
-        if form_key == self.ship_form:
-            return
-        self.form_prev   = self.ship_form
-        self.ship_form   = form_key
+        if form_key not in SHIP_FORMS: return
+        if form_key == self.ship_form: return
+        self.form_prev    = self.ship_form
+        self.ship_form    = form_key
         self.form_morph_t = 0
 
     def try_dash(self, keys):
         cd = int(SETTINGS.dash_cooldown * self.get_dash_cd_mult())
-        if self.dash_cd > 0:
-            return False
+        if self.dash_cd > 0: return False
         move = Vector2(0,0)
         if keys[pygame.K_LEFT]  or keys[pygame.K_a]: move.x -= 1
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move.x += 1
@@ -456,19 +542,54 @@ class Player(pygame.sprite.Sprite):
         self.invincible  = max(self.invincible, self.DASH_FRAMES + 5)
         return True
 
+    # ★ 심해 잠수 업데이트
+    def update_dive(self, diving_key_held, is_abyss_chapter):
+        """심해 챕터에서만 동작하는 잠수 시스템"""
+        if not is_abyss_chapter:
+            self.dive_active = False
+            self.dive_depth  = 0
+            self.dive_oxygen = self.dive_max_oxygen
+            return
+
+        if diving_key_held:
+            self.dive_active = True
+            self.dive_depth  = min(self.dive_max, self.dive_depth + 0.8)
+            self.dive_oxygen = max(0, self.dive_oxygen - 1)
+        else:
+            self.dive_active = False
+            self.dive_depth  = max(0, self.dive_depth - 1.5)
+            self.dive_oxygen = min(self.dive_max_oxygen, self.dive_oxygen + 2)
+
+        # 산소 0 → 데미지
+        if self.dive_oxygen <= 0 and self.dive_active:
+            self.dive_damage_cd -= 1
+            if self.dive_damage_cd <= 0:
+                self.dive_damage_cd = 60
+                self.health -= 5
+
     def update(self, keys, current_friction, mode, mouse_pos=None):
         self.mode = mode
-        if self.combo_timer > 0:
-            self.combo_timer -= 1
+        if self.combo_timer > 0: self.combo_timer -= 1
         else:
-            if self.combo > 0:
-                self.combo = max(0, self.combo - 1)
-        if self.dash_cd > 0:
-            self.dash_cd -= 1
-        if self.speed_boost > 0:
-            self.speed_boost -= 1
-        if self.form_morph_t < 1.0:
-            self.form_morph_t = min(1.0, self.form_morph_t + 0.06)
+            if self.combo > 0: self.combo = max(0, self.combo - 1)
+        if self.streak_timer > 0: self.streak_timer -= 1
+        else: self.streak_kills = 0
+        if self.dash_cd > 0: self.dash_cd -= 1
+        if self.speed_boost > 0: self.speed_boost -= 1
+        if self.overload_timer > 0: self.overload_timer -= 1
+        
+        # 스킬 타이머 업데이트
+        if self.skill_dmg_timer > 0: self.skill_dmg_timer -= 1
+        if self.skill_stealth_timer > 0: self.skill_stealth_timer -= 1
+        if self.skill_vamp_timer > 0: self.skill_vamp_timer -= 1
+        if self.skill_titan_timer > 0: self.skill_titan_timer -= 1
+
+        if self.form_morph_t < 1.0: self.form_morph_t = min(1.0, self.form_morph_t + 0.06)
+
+        # ★ 스킬 쿨타임 감소
+        for sk in self.skill_cooldowns:
+            if self.skill_cooldowns[sk] > 0:
+                self.skill_cooldowns[sk] -= 1
 
         if mode == "SHIP":
             self._update_ship(keys, current_friction, mouse_pos)
@@ -494,6 +615,8 @@ class Player(pygame.sprite.Sprite):
             self.vel += move.normalize() * SETTINGS.human_accel
         self.vel *= (1 + friction * 2)
         self.world_pos += self.vel
+        if self.skill_titan_timer > 0:
+            self.invincible = max(self.invincible, 2) # 거인화 중 무적
         if mouse_pos:
             diff = Vector2(mouse_pos) - Vector2(400,300)
             if diff.length() > 0:
@@ -516,7 +639,6 @@ class Player(pygame.sprite.Sprite):
         if move.length() > 0:
             self.vel += move.normalize() * SETTINGS.ship_accel
         self.vel *= (1 + friction) * SETTINGS.ship_friction
-        # 최대 속도 캡
         max_spd = SETTINGS.ship_max_speed * self.get_speed_mult()
         if self.vel.length() > max_spd:
             self.vel.scale_to_length(max_spd)
@@ -525,26 +647,35 @@ class Player(pygame.sprite.Sprite):
 
     def _redraw(self):
         self.base_image.fill((0,0,0,0))
+        is_titan = self.skill_titan_timer > 0
+        sz = 80 if is_titan else 40
+        if self.base_image.get_size() != (sz, sz):
+            self.base_image = pygame.Surface((sz, sz), pygame.SRCALPHA)
+        
         form = SHIP_FORMS.get(self.ship_form, SHIP_FORMS["fighter"])
         t    = self.form_morph_t
-
-        # 커스텀 색상 팔레트 적용
         color_data = next((c for c in SHIP_COLORS if c["key"]==self.ship_color_key), SHIP_COLORS[0])
 
-        if self.dash_timer > 0:
+        if self.overload_timer > 0:
+            # 과부하: 오렌지-적색 깜빡임
+            pulse = int(200 + 55 * math.sin(self.overload_timer * 0.3))
+            color = (pulse, pulse//3, 0)
+        elif self.dash_timer > 0:
             color = (255,255,255)
+        elif self.dive_active:
+            # 잠수: 깊이에 따라 더 어두운 청색
+            d_ratio = self.dive_depth / self.dive_max
+            color = (0, int(80*(1-d_ratio)), int(180+75*d_ratio))
         elif self.abyss_mode:
             color = (0,200,255)
         else:
             color = color_data["color_p"] if self.dimension=="PHYSICAL" else color_data["color_v"]
 
         if self.mode == "SHIP":
-            # 변형 보간 (이전 폼 → 현재 폼 선형 보간)
             poly_curr = form["poly"]
             poly_prev = SHIP_FORMS.get(self.form_prev, form)["poly"]
 
             def lerp_poly(pa, pb, t):
-                # 두 폴리곤 길이 맞춤 (짧은 쪽 마지막 점 반복)
                 n = max(len(pa), len(pb))
                 def ext(p, n):
                     return p + [p[-1]]*(n-len(p))
@@ -557,27 +688,32 @@ class Player(pygame.sprite.Sprite):
                 pygame.draw.polygon(self.base_image, color, poly)
                 pygame.draw.polygon(self.base_image, (255,255,255), poly, 1)
 
-            # 엔진 불꽃
             eng_col = (0,200,255) if self.abyss_mode else (255,150,50)
+            if self.dive_active:
+                eng_col = (0,120,255)
             for ep in form["engine_pos"]:
                 er = form["engine_r"]
                 pygame.draw.circle(self.base_image, eng_col, ep, er)
                 if self.speed_boost > 0:
                     pygame.draw.circle(self.base_image, (255,255,200), ep, er+2, 1)
+                # 과부하 엔진 이펙트
+                if self.overload_timer > 0:
+                    pygame.draw.circle(self.base_image, (255,100,0), ep, er+3, 1)
 
-            # 드레드노트 특수 — 측면 포
             if self.ship_form == "dreadnought":
                 pygame.draw.rect(self.base_image, (200,50,50), (0,10,6,8))
                 pygame.draw.rect(self.base_image, (200,50,50), (34,10,6,8))
-
-            # 심해함 특수 — 에너지 링
             if self.ship_form == "abyss_ship":
                 pygame.draw.circle(self.base_image, (0,150,255), (20,20), 18, 1)
-
-            # 팬텀 특수 — 차원 아우라
             if self.ship_form == "phantom":
                 aura_col = (200,200,255) if self.dimension=="PHYSICAL" else (255,220,0)
                 pygame.draw.circle(self.base_image, aura_col, (20,20), 19, 1)
+
+            # ★ 잠수 기포 이펙트
+            if self.dive_active and self.dive_depth > 10:
+                for bx, by in [(8,8),(30,12),(15,30)]:
+                    br = max(1, int(self.dive_depth / 30))
+                    pygame.draw.circle(self.base_image, (100,200,255,120), (bx,by), br)
 
         else:  # HUMAN 모드
             color_h = (0,255,255) if self.dimension=="PHYSICAL" else (255,0,255)
@@ -592,6 +728,15 @@ class Player(pygame.sprite.Sprite):
             ratio = self.shield / self.max_shield
             sc = (0, int(100+155*ratio), 255) if not self.abyss_mode else (0,220,180)
             pygame.draw.circle(self.base_image, sc, (20,20), 19, 2)
+
+        # ★ 과부하 외곽 링
+        if self.overload_timer > 0:
+            pulse = int(150 + 105 * math.sin(self.overload_timer * 0.4))
+            pygame.draw.circle(self.base_image, (255, pulse//2, 0), (sz//2,sz//2), sz//2+1, 2)
+
+        if is_titan:
+            # 거인 오라
+            pygame.draw.circle(self.base_image, (255, 50, 0, 100), (sz//2, sz//2), sz//2, 3)
 
         self.image = pygame.transform.rotate(self.base_image, self.angle)
         self.rect  = self.image.get_rect(center=(400,300))
@@ -613,6 +758,9 @@ class Player(pygame.sprite.Sprite):
         self.combo_timer = 180
         self.max_combo = max(self.max_combo, self.combo)
         self.kill_count += 1
+        # ★ streak 카운트
+        self.streak_kills += 1
+        self.streak_timer  = 120
         return self.combo
 
     def get_combo_multiplier(self):
@@ -623,6 +771,10 @@ class Player(pygame.sprite.Sprite):
         return 5.0
 
     def take_hit(self, dmg):
+        if self.invincible > 0 or self.dash_timer > 0 or self.skill_stealth_timer > 0:
+            return 0
+        if self.overload_timer > 0:
+            return 0   # ★ 과부하 중 무적
         if self.shield > 0:
             absorbed = min(self.shield, dmg)
             self.shield -= absorbed
@@ -636,28 +788,50 @@ class Player(pygame.sprite.Sprite):
 #  ROBOT COMPANION
 # ─────────────────────────────────────────
 class RobotCompanion(pygame.sprite.Sprite):
-    def __init__(self, owner):
+    def __init__(self, owner, drone_type="ATTACKER"):
         super().__init__()
         self.owner       = owner
+        self.drone_type  = drone_type
         self.world_pos   = Vector2(owner.world_pos)
-        self.orbit_angle = 0
+        self.orbit_angle = random.randint(0, 360)
         self.timer       = 0
-        self.shoot_cd    = 25
-        self.image       = pygame.Surface((22,22), pygame.SRCALPHA)
+        
+        # 드론 타입별 설정
+        # ATTACKER: 빠른 사격 (기본)
+        # STRIKER: 강한 한방, 느린 사격
+        # GUARD: 가까이서 방어형 사격
+        self.stats = {
+            "ATTACKER": {"cd": 22, "dmg": 0.8, "speed": 12, "orbit_r": 55,  "color": (0, 255, 200), "size": 18},
+            "STRIKER":  {"cd": 55, "dmg": 2.5, "speed": 18, "orbit_r": 75,  "color": (255, 100, 50), "size": 24},
+            "GUARD":    {"cd": 12, "dmg": 0.4, "speed": 10, "orbit_r": 35,  "color": (200, 255, 100), "size": 16},
+        }.get(drone_type, {"cd": 22, "dmg": 0.8, "speed": 12, "orbit_r": 55, "color": (0, 255, 200), "size": 18})
+        
+        size = self.stats["size"]
+        self.image       = pygame.Surface((size+4, size+4), pygame.SRCALPHA)
         self.rect        = self.image.get_rect()
         self._draw()
 
     def _draw(self):
         self.image.fill((0,0,0,0))
-        pygame.draw.rect(self.image, (80,180,255), (3,5,16,12))
-        pygame.draw.rect(self.image, (40,90,150),  (3,5,16,12), 1)
-        pygame.draw.rect(self.image, (60,160,230), (7,1,8,6))
-        pygame.draw.circle(self.image, (0,255,200), (9,4), 2)
-        pygame.draw.circle(self.image, (0,255,200), (13,4), 2)
+        c = self.stats["color"]; size = self.stats["size"]
+        if self.drone_type == "STRIKER":
+            # 중장갑형
+            pygame.draw.rect(self.image, (180, 50, 50), (2, 4, size, size-6), border_radius=4)
+            pygame.draw.circle(self.image, c, (size//2+2, size//2+2), 4)
+        elif self.drone_type == "GUARD":
+            # 신속방어형
+            pygame.draw.circle(self.image, (80, 150, 100), (size//2+2, size//2+2), size//2)
+            pygame.draw.circle(self.image, c, (size//2+2, size//2+2), 3)
+        else:
+            # 범용형
+            pygame.draw.rect(self.image, (80, 180, 255), (3, 5, 16, 12))
+            pygame.draw.circle(self.image, c, (9, 4), 2)
+            pygame.draw.circle(self.image, c, (13, 4), 2)
 
     def update(self, enemies, projectiles, dimension, camera_offset):
-        self.orbit_angle = (self.orbit_angle + 2.5) % 360
-        r = 55
+        spd = 3.5 if self.drone_type == "GUARD" else 2.5
+        self.orbit_angle = (self.orbit_angle + spd) % 360
+        r = self.stats["orbit_r"]
         self.world_pos = self.owner.world_pos + Vector2(
             math.cos(math.radians(self.orbit_angle)) * r,
             math.sin(math.radians(self.orbit_angle)) * r,
@@ -666,9 +840,9 @@ class RobotCompanion(pygame.sprite.Sprite):
         sy = int(self.world_pos.y - camera_offset.y)
         self.rect.center = (sx, sy)
         self.timer += 1
-        if self.timer >= self.shoot_cd:
+        if self.timer >= self.stats["cd"]:
             self.timer = 0
-            nearest, min_d = None, 420
+            nearest, min_d = None, 450
             for e in enemies:
                 if e.dimension_type == dimension:
                     d = (e.world_pos - self.world_pos).length()
@@ -678,49 +852,126 @@ class RobotCompanion(pygame.sprite.Sprite):
                 d = nearest.world_pos - self.world_pos
                 projectiles.add(Projectile(
                     self.world_pos, d.normalize(), dimension,
-                    color_override=(0,255,180), speed=11, dmg=1, is_direction=True))
+                    color_override=self.stats["color"], 
+                    speed=self.stats["speed"], 
+                    dmg=self.stats["dmg"], 
+                    is_direction=True))
+
+
+class ShadowSoldier(pygame.sprite.Sprite):
+    def __init__(self, owner, world_pos, etype="basic_drone"):
+        super().__init__()
+        self.owner = owner
+        self.world_pos = Vector2(world_pos)
+        self.etype = etype
+        data = ENEMY_DATA.get(etype, ENEMY_DATA["basic_drone"])
+        sz = data["size"]
+        self.image = pygame.Surface((sz, sz), pygame.SRCALPHA)
+        # 그림자 효과 (검은색 + 보라색 라인)
+        pygame.draw.circle(self.image, (20, 20, 20), (sz//2, sz//2), sz//2-1)
+        pygame.draw.circle(self.image, (150, 0, 255), (sz//2, sz//2), sz//2-1, 2)
+        self.rect = self.image.get_rect()
+        self.timer = 0
+        self.life = 900 # 15초
+        self.speed = 4.5
+        self.target = None
+
+    def update(self, enemies, projectiles, dimension, camera_offset):
+        self.life -= 1
+        if self.life <= 0:
+            self.kill()
+            return
+
+        # 가장 가까운 적 추적
+        if not self.target or not self.target.alive():
+            nearest, min_d = None, 600
+            for e in enemies:
+                if e.dimension_type == dimension:
+                    d = (e.world_pos - self.world_pos).length()
+                    if d < min_d:
+                        min_d = d; nearest = e
+            self.target = nearest
+
+        if self.target:
+            dir_to = (self.target.world_pos - self.world_pos).normalize()
+            self.world_pos += dir_to * self.speed
+        else:
+            # 적이 없으면 주인 근처로
+            dir_to = (self.owner.world_pos - self.world_pos)
+            if dir_to.length() > 100:
+                self.world_pos += dir_to.normalize() * self.speed
+
+        self.timer += 1
+        if self.timer % 40 == 0:
+            if self.target and (self.target.world_pos - self.world_pos).length() < 350:
+                d = self.target.world_pos - self.world_pos
+                projectiles.add(Projectile(
+                    self.world_pos, d.normalize(), dimension,
+                    color_override=(180, 0, 255),
+                    speed=10,
+                    dmg=3,
+                    is_direction=True,
+                    size=6))
+
+        sx = int(self.world_pos.x - camera_offset.x)
+        sy = int(self.world_pos.y - camera_offset.y)
+        self.rect.center = (sx, sy)
 
 
 # ─────────────────────────────────────────
 #  ENEMY DATA
 # ─────────────────────────────────────────
 ENEMY_DATA = {
-    "basic_drone":   {"name":"기본 드론",  "hp":1,"speed":1.9,"size":24,"cp":(0,150,255),"cv":(50,50,200),"shape":"circle","behavior":"chase","gem":1},
-    "swarm_organism":{"name":"군집 유기체","hp":1,"speed":2.4,"size":20,"cp":(80,200,80),"cv":(40,140,40),"shape":"triangle","behavior":"swarm","gem":1},
-    "glitcher":      {"name":"글리처",     "hp":1,"speed":3.0,"size":20,"cp":(200,0,200),"cv":(255,0,255),"shape":"rect","behavior":"zigzag","gem":1},
-    "hunter_drone":  {"name":"헌터 드론",  "hp":2,"speed":2.8,"size":22,"cp":(220,110,50),"cv":(160,50,0),"shape":"triangle","behavior":"chase","gem":1},
-    "sentinel":      {"name":"감시자",     "hp":3,"speed":1.3,"size":26,"cp":(100,100,200),"cv":(50,50,120),"shape":"rect","behavior":"orbit","gem":2},
-    "sniper_node":   {"name":"저격 노드",  "hp":2,"speed":0.8,"size":20,"cp":(255,255,100),"cv":(200,200,0),"shape":"diamond","behavior":"snipe","gem":2,"special":"ranged_shot"},
-    "elite_enforcer":{"name":"엘리트",     "hp":5,"speed":2.1,"size":26,"cp":(220,50,50),"cv":(160,0,0),"shape":"rect","behavior":"chase","gem":3,"special":"armor"},
-    "void_weaver":   {"name":"공허 방직자","hp":5,"speed":1.7,"size":28,"cp":(80,80,80),"cv":(0,220,220),"shape":"diamond","behavior":"orbit","gem":3,"special":"slow_field"},
-    "corrupted_sentry":{"name":"오염된 센트리","hp":6,"speed":1.5,"size":28,"cp":(140,140,0),"cv":(0,255,0),"shape":"circle","behavior":"chase","gem":3,"special":"poison_on_death"},
-    "shadow_lurker": {"name":"그림자 잠복자","hp":3,"speed":3.8,"size":22,"cp":(50,50,50),"cv":(10,10,10),"shape":"triangle","behavior":"zigzag","gem":3,"special":"dash"},
-    # 심해 전용
-    "abyss_eel":     {"name":"심해 뱀장어","hp":4,"speed":2.5,"size":22,"cp":(0,100,150),"cv":(0,200,255),"shape":"triangle","behavior":"zigzag","gem":2,"special":"poison_on_death"},
-    "depth_guardian":{"name":"심해 수호자","hp":8,"speed":1.0,"size":32,"cp":(0,60,120),"cv":(0,150,200),"shape":"rect","behavior":"orbit","gem":4,"special":"armor"},
-    "leviathan_eye": {"name":"리바이어던의 눈","hp":15,"speed":0.7,"size":40,"cp":(0,40,100),"cv":(0,100,200),"shape":"circle","behavior":"snipe","gem":8,"special":"ranged_shot"},
-    # 허공 차원 전용
-    "null_fragment":  {"name":"공백 파편", "hp":1,"speed":4.5,"size":18,"cp":(180,180,200),"cv":(220,220,255),"shape":"diamond","behavior":"chase","gem":1},
-    "void_titan":     {"name":"공허 타이탄","hp":20,"speed":1.2,"size":50,"cp":(60,0,120),"cv":(120,0,255),"shape":"circle","behavior":"orbit","gem":10,"special":"burst_shot"},
-    "echo_phantom":   {"name":"에코 팬텀",  "hp":6,"speed":2.8,"size":26,"cp":(150,150,200),"cv":(200,100,255),"shape":"diamond","behavior":"zigzag","gem":3,"special":"dash"},
-    # 중간 보스
-    "anomaly_core":        {"name":"이상 현상 코어","hp":30,"speed":0.9,"size":48,"cp":(100,160,220),"cv":(220,60,255),"shape":"circle","behavior":"orbit","gem":12,"special":"summon","spawn_progress":0.25},
-    "dreadnought_construct":{"name":"드레드노트","hp":50,"speed":1.1,"size":58,"cp":(90,90,90),"cv":(160,0,0),"shape":"rect","behavior":"chase","gem":15,"special":"burst_shot","spawn_progress":0.50},
-    "echo_wraith":         {"name":"메아리 망령","hp":38,"speed":2.2,"size":44,"cp":(130,130,160),"cv":(50,255,50),"shape":"diamond","behavior":"zigzag","gem":15,"special":"clone","spawn_progress":0.70},
-    "abyss_leviathan":     {"name":"심연의 리바이어던","hp":80,"speed":0.8,"size":70,"cp":(0,50,120),"cv":(0,150,255),"shape":"circle","behavior":"orbit","gem":25,"special":"burst_shot","spawn_progress":0.55},
-    "null_colossus":       {"name":"공백 거신","hp":60,"speed":1.4,"size":64,"cp":(100,100,140),"cv":(180,50,255),"shape":"rect","behavior":"chase","gem":20,"special":"phase_boss","spawn_progress":0.60},
-    # 최종 보스
-    "nexus_overmind":  {"name":"넥서스 오버마인드","hp":150,"speed":0.9,"size":80,"cp":(180,180,210),"cv":(255,0,255),"shape":"circle","behavior":"orbit","gem":40,"special":"phase_boss","phase_count":3,"spawn_progress":0.85},
-    "abyssal_tyrant":  {"name":"심연의 폭군","hp":200,"speed":1.3,"size":90,"cp":(80,0,0),"cv":(0,255,150),"shape":"circle","behavior":"chase","gem":50,"special":"phase_boss","phase_count":3,"spawn_progress":0.90},
-    "void_god":        {"name":"공허의 신","hp":250,"speed":1.0,"size":100,"cp":(60,0,120),"cv":(255,200,255),"shape":"circle","behavior":"orbit","gem":60,"special":"phase_boss","phase_count":4,"spawn_progress":0.88},
-    "abyss_sovereign": {"name":"심연의 군주","hp":300,"speed":0.7,"size":110,"cp":(0,30,80),"cv":(0,200,255),"shape":"circle","behavior":"chase","gem":70,"special":"phase_boss","phase_count":4,"spawn_progress":0.92},
-    # 제3차원 블랙홀 보스 — 블랙홀에 흡입될 때만 등장 (다양한 종류)
-    "rift_guardian":   {"name":"균열의 수호자","hp":120,"speed":1.5,"size":80,"cp":(120,0,180),"cv":(255,50,255),"shape":"circle","behavior":"orbit","gem":30,"special":"phase_boss","phase_count":3},
-    "rift_devourer":   {"name":"균열의 포식자","hp":160,"speed":2.0,"size":86,"cp":(200,0,100),"cv":(255,100,0),"shape":"triangle","behavior":"chase","gem":35,"special":"phase_boss","phase_count":3},
-    "rift_colossus":   {"name":"균열의 거신",  "hp":200,"speed":1.0,"size":100,"cp":(80,80,200),"cv":(200,200,255),"shape":"rect","behavior":"orbit","gem":40,"special":"phase_boss","phase_count":4},
-    "void_wraith_king":{"name":"공허 망령왕",  "hp":140,"speed":2.8,"size":76,"cp":(50,0,100),"cv":(200,50,255),"shape":"diamond","behavior":"zigzag","gem":32,"special":"phase_boss","phase_count":3},
-    "abyss_rift_lord": {"name":"심연 균열군주","hp":240,"speed":0.8,"size":110,"cp":(0,20,80),"cv":(0,150,255),"shape":"circle","behavior":"snipe","gem":50,"special":"phase_boss","phase_count":4},
-    "entropy_core":    {"name":"엔트로피 코어","hp":180,"speed":1.6,"size":90,"cp":(200,100,0),"cv":(255,200,50),"shape":"circle","behavior":"orbit","gem":38,"special":"phase_boss","phase_count":3},
+    "basic_drone":   {"name":"기본 드론",  "hp":2.3, "speed":2.18,"size":24,"cp":(0,150,255),"cv":(50,50,200),"shape":"circle","behavior":"melee","gem":1},
+    "swarm_organism":{"name":"군집 유기체","hp":1.15,"speed":2.76,"size":20,"cp":(80,200,80),"cv":(40,140,40),"shape":"triangle","behavior":"swarm","gem":1},
+    "glitcher":      {"name":"글리처",     "hp":1.15,"speed":3.45,"size":20,"cp":(200,0,200),"cv":(255,0,255),"shape":"rect","behavior":"zigzag","gem":1},
+    "hunter_drone":  {"name":"헌터 드론",  "hp":2.3, "speed":3.22,"size":22,"cp":(220,110,50),"cv":(160,50,0),"shape":"triangle","behavior":"melee","gem":1},
+    "sentinel":      {"name":"감시자",     "hp":3.45,"speed":1.49,"size":26,"cp":(100,100,200),"cv":(50,50,120),"shape":"rect","behavior":"orbit","gem":2},
+    "sniper_node":   {"name":"저격 노드",  "hp":2.3, "speed":0.92,"size":20,"cp":(255,255,100),"cv":(200,200,0),"shape":"diamond","behavior":"ranged","gem":2,"special":"ranged_shot"},
+    "elite_enforcer":{"name":"엘리트",     "hp":5.75,"speed":2.41,"size":26,"cp":(220,50,50),"cv":(160,0,0),"shape":"rect","behavior":"hybrid","gem":3,"special":"armor"},
+    "void_weaver":   {"name":"공허 방직자","hp":5.75,"speed":1.95,"size":28,"cp":(80,80,80),"cv":(0,220,220),"shape":"diamond","behavior":"orbit","gem":3,"special":"slow_field"},
+    "corrupted_sentry":{"name":"오염된 센트리","hp":6.9,"speed":1.72,"size":28,"cp":(140,140,0),"cv":(0,255,0),"shape":"circle","behavior":"melee","gem":3,"special":"poison_on_death"},
+    "shadow_lurker": {"name":"그림자 잠복자","hp":3.45,"speed":4.37,"size":22,"cp":(50,50,50),"cv":(10,10,10),"shape":"triangle","behavior":"zigzag","gem":3,"special":"dash"},
+    "abyss_eel":     {"name":"심해 뱀장어","hp":4.6,"speed":2.87,"size":22,"cp":(0,100,150),"cv":(0,200,255),"shape":"triangle","behavior":"zigzag","gem":2,"special":"poison_on_death"},
+    "depth_guardian":{"name":"심해 수호자","hp":9.2,"speed":1.15,"size":32,"cp":(0,60,120),"cv":(0,150,200),"shape":"rect","behavior":"orbit","gem":4,"special":"armor"},
+    "leviathan_eye": {"name":"리바이어던의 눈","hp":17.25,"speed":0.80,"size":40,"cp":(0,40,100),"cv":(0,100,200),"shape":"circle","behavior":"ranged","gem":8,"special":"ranged_shot"},
+    "null_fragment":  {"name":"공백 파편", "hp":1.15,"speed":5.17,"size":18,"cp":(180,180,200),"cv":(220,220,255),"shape":"diamond","behavior":"melee","gem":1},
+    "void_titan":     {"name":"공허 타이탄","hp":23.0,"speed":1.38,"size":50,"cp":(60,0,120),"cv":(120,0,255),"shape":"circle","behavior":"orbit","gem":10,"special":"burst_shot"},
+    "echo_phantom":   {"name":"에코 팬텀",  "hp":6.9,"speed":3.22,"size":26,"cp":(150,150,200),"cv":(200,100,255),"shape":"diamond","behavior":"zigzag","gem":3,"special":"dash"},
+    "anomaly_core":        {"name":"이상 현상 코어","hp":34.5,"speed":1.03,"size":48,"cp":(100,160,220),"cv":(220,60,255),"shape":"circle","behavior":"orbit","gem":12,"special":"summon","spawn_progress":0.25},
+    "dreadnought_construct":{"name":"드레드노트","hp":57.5,"speed":1.26,"size":58,"cp":(90,90,90),"cv":(160,0,0),"shape":"rect","behavior":"melee","gem":15,"special":"burst_shot","spawn_progress":0.50},
+    "echo_wraith":         {"name":"메아리 망령","hp":43.7,"speed":2.53,"size":44,"cp":(130,130,160),"cv":(50,255,50),"shape":"diamond","behavior":"zigzag","gem":15,"special":"clone","spawn_progress":0.70},
+    "abyss_leviathan":     {"name":"심연의 리바이어던","hp":92.0,"speed":0.92,"size":70,"cp":(0,50,120),"cv":(0,150,255),"shape":"circle","behavior":"orbit","gem":25,"special":"burst_shot","spawn_progress":0.55},
+    "null_colossus":       {"name":"공백 거신","hp":69.0,"speed":1.61,"size":64,"cp":(100,100,140),"cv":(180,50,255),"shape":"rect","behavior":"melee","gem":20,"special":"phase_boss","spawn_progress":0.60},
+    "nexus_overmind":  {"name":"넥서스 오버마인드","hp":172.5,"speed":1.03,"size":80,"cp":(180,180,210),"cv":(255,0,255),"shape":"circle","behavior":"orbit","gem":40,"special":"phase_boss","phase_count":3,"spawn_progress":0.85},
+    "abyssal_tyrant":  {"name":"심연의 폭군","hp":230.0,"speed":1.49,"size":90,"cp":(80,0,0),"cv":(0,255,150),"shape":"circle","behavior":"melee","gem":50,"special":"phase_boss","phase_count":3,"spawn_progress":0.90},
+
+    # ★ 돌연변이 (Mutants) - 강력하고 스킬을 기본 보유
+    "mutant_drone":  {"name":"뮤턴트 드론", "hp":15.0,"speed":2.5,"size":30,"cp":(255,255,255),"cv":(255,0,255),"shape":"circle","behavior":"hybrid","gem":15,"special":"blink_dash","mutant":True},
+    "mutant_sentinel":{"name":"뮤턴트 파수꾼","hp":25.0,"speed":1.8,"size":35,"cp":(0,255,100),"cv":(0,200,50),"shape":"rect","behavior":"hybrid","gem":20,"special":"energy_beam","mutant":True},
+    "mutant_lurker": {"name":"뮤턴트 복수자","hp":18.0,"speed":4.0,"size":28,"cp":(255,100,0),"cv":(200,50,0),"shape":"triangle","behavior":"melee","gem":18,"special":"dash_attack","mutant":True},
+    "mutant_void":   {"name":"뮤턴트 보이더","hp":30.0,"speed":1.2,"size":40,"cp":(150,0,255),"cv":(100,0,200),"shape":"diamond","behavior":"ranged","gem":22,"special":"spiral_shot","mutant":True},
+
+    "gravity_orb":   {"name":"중력 구체",   "hp":11.5,"speed":0.92,"size":30, "cp":(150,0,255), "cv":(100,0,200), "shape":"circle", "behavior":"melee", "gem":5, "special":"pull_player"},
+    "beam_turret":   {"name":"빔 터렛",     "hp":15.4,"speed":0,   "size":32, "cp":(255,50,50), "cv":(200,0,0),   "shape":"rect",   "behavior":"ranged", "gem":10, "special":"constant_laser"},
+    "plasma_fly":    {"name":"플라즈마 파리","hp":1.5, "speed":4.98,"size":16, "cp":(255,255,0), "cv":(200,200,50),"shape":"triangle", "behavior":"zigzag","gem":2},
+    "dark_matter":   {"name":"암흑 물질",   "hp":30.7,"speed":1.38,"size":45, "cp":(20,20,20),  "cv":(50,0,80),   "shape":"circle", "behavior":"swarm", "gem":15, "special":"split_on_death"},
+    "void_stinger":  {"name":"보이드 침입자","hp":7.7, "speed":4.21,"size":24, "cp":(0,255,255), "cv":(0,150,150), "shape":"diamond", "behavior":"melee", "gem":6,  "special":"dash_attack"},
+    "void_god":        {"name":"공허의 신","hp":287.5,"speed":1.15,"size":100,"cp":(60,0,120),"cv":(255,200,255),"shape":"circle","behavior":"orbit","gem":60,"special":"phase_boss","phase_count":4,"spawn_progress":0.88},
+    "abyss_sovereign": {"name":"심연의 군주","hp":345.0,"speed":0.81,"size":110,"cp":(0,30,80),"cv":(0,200,255),"shape":"circle","behavior":"melee","gem":70,"special":"phase_boss","phase_count":4,"spawn_progress":0.92},
+    "rift_guardian":   {"name":"균열의 수호자","hp":138.0,"speed":1.72,"size":80,"cp":(120,0,180),"cv":(255,50,255),"shape":"circle","behavior":"orbit","gem":30,"special":"phase_boss","phase_count":3},
+    "rift_devourer":   {"name":"균열의 포식자","hp":184.0,"speed":1.60,"size":86,"cp":(200,0,100),"cv":(255,100,0),"shape":"triangle","behavior":"melee","gem":35,"special":"phase_boss","phase_count":3},
+    "rift_colossus":   {"name":"균열의 거신",  "hp":230.0,"speed":1.15,"size":100,"cp":(80,80,200),"cv":(200,200,255),"shape":"rect","behavior":"orbit","gem":40,"special":"phase_boss","phase_count":4},
+    "void_wraith_king":{"name":"공허 망령왕",  "hp":161.0,"speed":3.22,"size":76,"cp":(50,0,100),"cv":(200,50,255),"shape":"diamond","behavior":"zigzag","gem":32,"special":"phase_boss","phase_count":3},
+    "abyss_rift_lord": {"name":"심연 균열군주","hp":276.0,"speed":0.92,"size":110,"cp":(0,20,80),"cv":(0,150,255),"shape":"circle","behavior":"ranged","gem":50,"special":"phase_boss","phase_count":4},
+    "entropy_core":    {"name":"엔트로피 코어","hp":207.0,"speed":1.84,"size":90,"cp":(200,100,0),"cv":(255,200,50),"shape":"circle","behavior":"orbit","gem":38,"special":"phase_boss","phase_count":3},
+    "deep_angler":     {"name":"심해 아귀",  "hp":6.9, "speed":2.07,"size":30,"cp":(20,60,100),"cv":(0,180,255),"shape":"circle","behavior":"ranged","gem":4,"special":"ranged_shot"},
+    "abyss_hydra":     {"name":"심연 히드라","hp":28.75,"speed":1.38,"size":50,"cp":(0,40,120),"cv":(0,120,200),"shape":"rect","behavior":"orbit","gem":12,"special":"burst_shot","spawn_progress":0.40},
+    "colossal_titan":  {"name":"초대형 거인","hp":500.0,"speed":0.70,"size":130,"cp":(220,50,50),"cv":(180,0,0),"shape":"rect","behavior":"melee","gem":100, "special":"steam_burst", "spawn_progress":0.95},
+    "blink_striker":   {"name":"블링크 스트라이커","hp":12.0,"speed":3.50,"size":24,"cp":(0,255,150),"cv":(200,255,255),"shape":"triangle","behavior":"melee","gem":8, "special":"blink_dash"},
+    "energy_cursed":   {"name":"주령 구체","hp":45.0,"speed":1.20,"size":40,"cp":(50,0,80),"cv":(150,0,255),"shape":"circle","behavior":"hybrid","gem":20, "special":"energy_beam"},
+    "gravity_core":    {"name":"중력 코어","hp":80.0,"speed":0.80,"size":50,"cp":(30,30,30),"cv":(0,0,0),"shape":"circle","behavior":"melee","gem":25, "special":"gravity_vacuum"},
+    "spiral_master":   {"name":"나선 마스터","hp":60.0,"speed":1.50,"size":45,"cp":(0,100,200),"cv":(200,255,255),"shape":"triangle","behavior":"ranged","gem":22, "special":"spiral_shot"},
 }
 
 
@@ -739,16 +990,19 @@ class Enemy(pygame.sprite.Sprite):
         self.world_pos = Vector2(world_pos)
         self.pos       = self.world_pos
         self.vel       = Vector2(0,0)
-        self.speed     = data["speed"] * (1 + difficulty * 0.15)
-        self.hp        = int(data["hp"] * (1 + difficulty * 0.1))
+        self.speed     = data["speed"] * (1 + difficulty * 0.18)
+        self.hp        = int(data["hp"] * (1 + difficulty * 0.25))
         self.max_hp    = self.hp
+        self.dmg_bonus = int(difficulty * 1.2)
         self.gem_val   = data.get("gem",1)
         self.special   = data.get("special",None)
         self.behavior  = data["behavior"]
         self.name      = data["name"]
+        self.is_mutant = data.get("mutant", False)
         self.special_timer = 0
         self.phase     = 1
         self.orbit_angle = random.uniform(0,360)
+        self.flash_timer = 0
         self._draw()
 
     def _draw(self):
@@ -763,17 +1017,29 @@ class Enemy(pygame.sprite.Sprite):
         shape = data["shape"]
         if shape == "circle":
             pygame.draw.circle(self.image, cp, (cx,cy), r)
-            if data["hp"] >= 20: pygame.draw.circle(self.image, (255,200,0), (cx,cy), r, 3)
-            elif data["hp"] >= 5: pygame.draw.circle(self.image, white, (cx,cy), r, 1)
+            pygame.draw.circle(self.image, (min(255,cp[0]+60), min(255,cp[1]+60), min(255,cp[2]+60)), (cx,cy), r//2) # 코어 광원
+            if data["hp"] >= 20: 
+                pygame.draw.circle(self.image, (255,200,0), (cx,cy), r, 3)
+            elif data["hp"] >= 5: 
+                pygame.draw.circle(self.image, white, (cx,cy), r, 1)
         elif shape == "triangle":
             pygame.draw.polygon(self.image, cp, [(cx,2),(sz-2,sz-2),(2,sz-2)])
+            pygame.draw.circle(self.image, white, (cx, cy+2), 3) # 중심 램프
         elif shape == "rect":
             pygame.draw.rect(self.image, cp, (2,2,sz-4,sz-4))
             pygame.draw.rect(self.image, white, (2,2,sz-4,sz-4), 1)
+            pygame.draw.rect(self.image, (min(255,cp[0]*2), min(255,cp[1]*2), min(255,cp[2]*2)), (cx-2,cy-2,4,4)) # 중앙 센서
             if data["hp"] >= 5: pygame.draw.rect(self.image, (255,200,0),(2,2,sz-4,sz-4), 2)
         elif shape == "diamond":
             pygame.draw.polygon(self.image, cp, [(cx,2),(sz-2,cy),(cx,sz-2),(2,cy)])
             pygame.draw.polygon(self.image, white, [(cx,2),(sz-2,cy),(cx,sz-2),(2,cy)], 1)
+            pygame.draw.circle(self.image, white, (cx,cy), 3) # 다이아몬드 코어
+            
+        if self.is_mutant:
+            # 돌연변이 전용 테두리 및 코어 효과
+            pygame.draw.circle(self.image, (255, 255, 255, 120), (cx, cy), r+1, 2)
+            pygame.draw.circle(self.image, cp, (cx, cy), 5)
+
         if self.special == "phase_boss" and self.phase >= 2:
             pygame.draw.circle(self.image, (255,50,50), (cx,cy), r, 3)
 
@@ -794,15 +1060,29 @@ class Enemy(pygame.sprite.Sprite):
         d_vec = player_pos - self.world_pos
         dist  = d_vec.length()
         if self.special == "ranged_shot" and self.special_timer % 90 == 0 and dist < 500:
-            eprojs.add(EnemyProjectile(self.world_pos, d_vec.normalize(), dimension, color=(255,255,0), speed=6, dmg=8))
+            eprojs.add(EnemyProjectile(self.world_pos, d_vec.normalize(), dimension, color=(255,255,0), speed=6, dmg=8 + self.dmg_bonus))
         if self.special == "burst_shot" and self.special_timer % 80 == 0:
             for a in range(0,360,45):
                 v = Vector2(math.cos(math.radians(a)), math.sin(math.radians(a)))
-                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(255,80,0), speed=5, dmg=5))
+                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(255,80,0), speed=5, dmg=5 + self.dmg_bonus))
         if self.special == "phase_boss" and self.special_timer % 60 == 0:
             for a in range(0,360,90):
                 v = Vector2(math.cos(math.radians(a+self.special_timer)), math.sin(math.radians(a+self.special_timer)))
-                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(255,0,100), speed=4+self.phase, dmg=8+self.phase*3))
+                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(255,0,100), speed=4+self.phase, dmg=8+self.phase*3 + self.dmg_bonus))
+        if self.special == "steam_burst" and self.special_timer % 150 == 0:
+            for a in range(0,360,15):
+                v = Vector2(math.cos(math.radians(a)), math.sin(math.radians(a)))
+                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(200,200,200), speed=3, dmg=15 + self.dmg_bonus))
+        if self.special == "energy_beam" and self.special_timer % 120 == 0:
+            v = (player_pos - self.world_pos).normalize()
+            for i in range(5):
+                pos = self.world_pos + v * (i * 20)
+                eprojs.add(EnemyProjectile(pos, v, dimension, color=(150,0,255), speed=10, dmg=12 + self.dmg_bonus))
+        if self.special == "spiral_shot" and self.special_timer % 80 == 0:
+            for a in range(0, 360, 45):
+                angle_rad = math.radians(a + self.special_timer * 2)
+                v = Vector2(math.cos(angle_rad), math.sin(angle_rad))
+                eprojs.add(EnemyProjectile(self.world_pos, v, dimension, color=(0, 255, 255), speed=5, dmg=7 + self.dmg_bonus))
 
     def _do_behavior(self, player_pos, all_enemies):
         to_player = player_pos - self.world_pos
@@ -825,12 +1105,32 @@ class Enemy(pygame.sprite.Sprite):
                                           math.sin(math.radians(self.orbit_angle))*200)
             d = target - self.world_pos
             self.vel = d.normalize() * self.speed if d.length() > 0 else Vector2(0,0)
-        elif self.behavior == "snipe":
+        elif self.behavior == "snipe" or self.behavior == "ranged":
             if dist > 350:   self.vel = chase_dir * self.speed
             elif dist < 200: self.vel = -chase_dir * self.speed
             else:            self.vel *= 0.9
+        elif self.behavior == "melee":
+            self.vel = chase_dir * self.speed
+        elif self.behavior == "hybrid":
+            # 거리에 따라 다르게 행동 (적정 거리 250~350)
+            if dist > 400:   self.vel = chase_dir * self.speed
+            elif dist < 200: self.vel = -chase_dir * self.speed
+            else:
+                # 적정 거리에서 플레이어 주위를 조금씩 흔들며 이동
+                perp = Vector2(-chase_dir.y, chase_dir.x)
+                self.vel = (perp * math.sin(self.special_timer * 0.05)).normalize() * (self.speed * 0.5)
+            
+            # 하이브리드는 가끔 돌격 스킬 사용
+            if self.special_timer % 200 == 0 and dist < 450:
+                self.vel = chase_dir * self.speed * 4
         if self.special == "dash" and self.special_timer % 120 == 0:
             self.vel = chase_dir * self.speed * 5
+        if self.special == "blink_dash" and self.special_timer % 90 == 0:
+            if dist < 400:
+                self.world_pos += chase_dir * 150 # 텔레포트형 이동
+        if self.special == "gravity_vacuum" and dist < 500:
+            # 주위 개체 및 플레이어를 끌어당김 (가상으로 속도 조절)
+            pass # engine.py에서 플레이어 위치 조정 필요
         self.world_pos += self.vel
 
     def _boid(self, all_enemies):
@@ -856,6 +1156,7 @@ class Enemy(pygame.sprite.Sprite):
                 self.phase = new_phase
                 self.speed *= 1.25
                 self._draw()
+        self.flash_timer = 3  # 피격 시 3프레임 동안 흰색으로 번쩍임
         return self.hp <= 0
 
 
@@ -869,12 +1170,14 @@ class Projectile(pygame.sprite.Sprite):
         self.dimension = dimension
         self.dmg       = dmg
         self.world_pos = Vector2(world_pos)
-        sz = max(size,4)*2
+        sz = max(size,4)*3
         self.image = pygame.Surface((sz,sz), pygame.SRCALPHA)
         color = color_override or ((0,255,255) if dimension=="PHYSICAL" else (255,0,255))
         r = sz//2
-        pygame.draw.circle(self.image, color, (r,r), r-1)
-        pygame.draw.circle(self.image, (255,255,255), (r,r), max(1,r-3))
+        # 글로우 효과를 위해 겹쳐 그리기
+        pygame.draw.circle(self.image, (*color, 60), (r,r), r-1)
+        pygame.draw.circle(self.image, (*color, 150), (r,r), r-3)
+        pygame.draw.circle(self.image, (255,255,255), (r,r), max(1,r-5))
         self.rect = self.image.get_rect()
         self.vel  = Vector2(direction).normalize()*speed if Vector2(direction).length()>0 else Vector2(0,-speed)
         self.life = 0
@@ -941,7 +1244,7 @@ class Gem(pygame.sprite.Sprite):
 
 
 # ─────────────────────────────────────────
-#  STRUCTURE
+#  STRUCTURE / FLUID
 # ─────────────────────────────────────────
 class Structure(pygame.sprite.Sprite):
     def __init__(self, rect_tuple, color=(50,50,60), border=(80,80,100)):
@@ -960,9 +1263,53 @@ class Structure(pygame.sprite.Sprite):
         return pygame.Rect(self.wx, self.wy, self.w, self.h)
 
 
-# ─────────────────────────────────────────
-#  FLUID
-# ─────────────────────────────────────────
+class ShadowSoldier(pygame.sprite.Sprite):
+    def __init__(self, owner, pos, etype="basic_drone"):
+        super().__init__()
+        self.owner = owner
+        self.world_pos = Vector2(pos)
+        self.life = 1200  # 20초
+        self.image = pygame.Surface((32, 32), pygame.SRCALPHA)
+        # 그림자 군단 디자인 (보라색 오라 + 검은 핵)
+        pygame.draw.circle(self.image, (20, 0, 40, 180), (16, 16), 15)
+        pygame.draw.circle(self.image, (100, 0, 255), (16, 16), 11, 2)
+        pygame.draw.circle(self.image, (0, 0, 0), (16, 16), 5)
+        self.rect = self.image.get_rect()
+        self.timer = 0
+        self.etype = etype
+
+    def update_screen_pos(self, camera_offset):
+        self.rect.center = (int(self.world_pos.x - camera_offset.x),
+                            int(self.world_pos.y - camera_offset.y))
+
+    def update(self, enemies, projectiles, dimension, camera_offset):
+        self.life -= 1
+        if self.life <= 0: 
+            self.kill()
+            return
+        
+        # 주인(플레이어) 주변을 호위하며 따라다님
+        target = self.owner.world_pos + Vector2(60, 0).rotate(self.life * 1.5)
+        move_vec = target - self.world_pos
+        if move_vec.length() > 5:
+            self.world_pos += move_vec.normalize() * 5
+            
+        # 자동 공격 로직
+        self.timer += 1
+        if self.timer % 45 == 0:
+            nearest = None
+            min_dist = 500
+            for e in enemies:
+                d = (e.world_pos - self.world_pos).length()
+                if d < min_dist:
+                    min_dist = d
+                    nearest = e
+            if nearest:
+                fire_dir = (nearest.world_pos - self.world_pos).normalize()
+                projectiles.add(Projectile(self.world_pos, fire_dir, dimension, 
+                                          color_override=(130, 0, 255), speed=12, dmg=8))
+
+
 class Fluid(pygame.sprite.Sprite):
     def __init__(self, rect_tuple, color=(0,50,200,80)):
         super().__init__()

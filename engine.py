@@ -3,7 +3,7 @@ import random
 import math
 from entities import (Player, Enemy, Projectile, EnemyProjectile, Gem,
                       Structure, Fluid, RobotCompanion, PickupItem,
-                      Particle, Blackhole, WEAPONS, WEAPON_ORDER,
+                      Particle, Blackhole, ShadowSoldier, WEAPONS, WEAPON_ORDER,
                       WEAPON_UNLOCK_LEVEL, ENEMY_DATA, ITEM_DATA, SHIP_FORMS,
                       SHIP_COLORS, SETTINGS)
 from pygame.math import Vector2
@@ -19,9 +19,36 @@ class StarField:
             stars = [(random.uniform(0,3000), random.uniform(0,3000)) for _ in range(count//3)]
             self.layers.append({"stars": stars, "parallax": 0.15+layer*0.25,
                                  "size": layer+1, "bright": 70+layer*55})
+        
+        # ★ 성운(Nebula) 레이어 추가 (사람이 만든 느낌의 배경 깊이)
+        self.nebulae = []
+        for _ in range(12):
+            self.nebulae.append({
+                "pos": (random.uniform(0,3000), random.uniform(0,3000)),
+                "size": random.randint(200, 500),
+                "color": (random.randint(20,60), random.randint(0,30), random.randint(40,100), 40),
+                "parallax": 0.1
+            })
 
     def draw(self, surface, camera_offset, dimension, abyss=False):
         W, H = 800, 600
+        # 1. 성운 그리기 (가장 멀리 있음)
+        for n in self.nebulae:
+            px, py = n["pos"]
+            para = n["parallax"]
+            x = int((px - camera_offset.x * para) % 3000)
+            y = int((py - camera_offset.y * para) % 3000)
+            # 메인과 복제본
+            for ox in [-3000, 0, 3000]:
+                for oy in [-3000, 0, 3000]:
+                    fx, fy = x + ox, y + oy
+                    if -100 <= fx <= W+100 and -100 <= fy <= H+100:
+                        ss = n["size"]
+                        try:
+                            # 빠른 드로잉 (그라데이션 대신 겹침으로 소프트하게)
+                            pygame.draw.circle(surface, n["color"], (fx, fy), ss)
+                        except: pass
+
         for layer in self.layers:
             px = layer["parallax"]
             for sx, sy in layer["stars"]:
@@ -54,7 +81,7 @@ class Chapter:
         self.duration  = duration
         self.overview  = overview
         self.enemy_set = enemy_set or "normal"
-        self.special   = special or []   # 특수 규칙 리스트
+        self.special   = special or []
 
     def get_bg(self, progress, void=False, abyss=False):
         zones = self.bg_zones
@@ -88,23 +115,19 @@ class GameManager:
         self.difficulty    = 1.0
         self.camera_offset = Vector2(0,0)
 
-        # ── 차원 시스템 ──────────────────────────────
-        self.abyss_active   = False   # 블랙홀 소멸 후 심해 차원 활성
-        self.abyss_timer    = 0       # 남은 프레임 (3600=60초)
+        self.abyss_active   = False
+        self.abyss_timer    = 0
         self.ABYSS_DURATION = 3600
 
-        # ── 블랙홀 ───────────────────────────────────
-        self.blackholes    = []
-        self.bh_spawn_cd   = 0        # 블랙홀 쿨타임
+        self.blackholes    = pygame.sprite.Group()
+        self.bh_spawn_cd   = 0
 
-        # ── 색상 선택 UI ──────────────────────────────
         self.color_select_active  = False
         self.color_select_idx     = 0
-        self.pending_chapter_id   = None   # 색상 선택 후 시작할 챕터
+        self.pending_chapter_id   = None
 
-        # ── 제3차원 (균열 차원) ────────────────────────
-        self.rift_active      = False   # 블랙홀 흡입 후 제3차원 전투
-        self.rift_boss        = None    # 균열 수호자 Enemy 인스턴스
+        self.rift_active      = False
+        self.rift_boss        = None
         self.rift_enemies     = pygame.sprite.Group()
         self.rift_projectiles = pygame.sprite.Group()
         self.rift_ep          = pygame.sprite.Group()
@@ -113,68 +136,72 @@ class GameManager:
         self.rift_player_pos_save = Vector2(0,0)
         self.rift_timer       = 0
 
-        # ── 블랙홀 흡입 트랜지션 ──────────────────────
-        self.bh_suck_timer   = 0        # >0 이면 흡입 연출 중
-        self.bh_suck_target  = None     # 흡입하는 블랙홀
-        self.bh_flash_timer  = 0        # 화이트 플래시
+        self.bh_suck_timer   = 0
+        self.bh_suck_target  = None
+        self.bh_flash_timer  = 0
 
-        # ── 블랙홀 보스 처치 누적 (능력치 상향용) ────
-        self.rift_boss_kill_count = 0   # 처치한 균열 보스 수
+        self.rift_boss_kill_count = 0
 
-        # 우주선 변형 선택 UI
         self.form_select_active = False
         self.form_select_idx    = 0
 
-        # ── 메인 메뉴 룰렛 ─────────────────────────────
-        self.roulette_active   = False   # 룰렛 돌아가는 중
-        self.roulette_timer    = 0       # 현재 프레임
-        self.roulette_duration = 180     # 총 프레임 (3초)
-        self.roulette_idx      = 0       # 현재 강조 인덱스 (0~5)
-        self.roulette_result   = None    # 최종 결과 챕터 ID
-        self.roulette_flash    = 0       # 결과 플래시 타이머
+        self.roulette_active   = False
+        self.roulette_timer    = 0
+        self.roulette_duration = 180
+        self.roulette_idx      = 0
+        self.roulette_result   = None
+        self.roulette_flash    = 0
 
-        # ── 설정 창 ─────────────────────────────────────
         self.settings_open     = False
-        self.settings_sel      = 0       # 현재 선택 항목 인덱스
+        self.settings_sel      = 0
+
+        # ★ 심해 잠수 전용 상태
+        self.dive_spawn_timer = 0
+
+        # ★ 연속킬 streak 이펙트 타이머
+        self.streak_flash_timer = 0
+        self.streak_flash_count = 0
 
         self.chapters = {
             "1": Chapter(
-                "Orbital Void", "SHIP", -0.02,
+                "섹터 제로: 궤도의 정적", "SHIP", -0.02,
                 [(0.0,(10,20,30)),(0.4,(5,30,60)),(0.7,(30,10,50)),(1.0,(60,5,20))],
-                90, "Zero-G 전투 · 기본 챕터 · SPACE 대쉬  [F] 변형",
+                3600, "무중력 전투 · 기초 훈련 · 스페이스 대쉬 · 시간 무제한",
                 enemy_set="normal",
             ),
             "2": Chapter(
-                "Corrupted City", "HUMAN", -0.25,
+                "제9구역: 네온 유적", "HUMAN", -0.25,
                 [(0.0,(30,30,40)),(0.3,(40,25,35)),(0.6,(20,20,50)),(1.0,(50,10,10))],
-                90, "폐허 도시 · 보병 작전 · 구조물 많음",
+                3600, "폐허가 된 거대도시 · 보병 작전 · 높은 구조물 밀도",
                 enemy_set="normal",
             ),
             "3": Chapter(
-                "Toxic Abyss", "SHIP", -0.18,
+                "반타블랙 심해", "SHIP", -0.18,
                 [(0.0,(5,30,40)),(0.3,(0,50,60)),(0.6,(0,30,80)),(1.0,(0,10,60))],
-                120, "심해 우주 · 심해함 전용 맵 · 독성 유체",
-                enemy_set="abyss", special=["toxic_fluid","abyss_enemies","deep_gravity"],
+                3600, "심해 비행 · [Z] 잠수 · 수압 위험 · 네온 서펜트",
+                enemy_set="abyss", special=["toxic_fluid","abyss_enemies","deep_gravity","diving"],
             ),
             "4": Chapter(
-                "Void Rift", "SHIP", -0.05,
+                "이벤트 호라이즌", "SHIP", -0.05,
                 [(0.0,(20,0,40)),(0.3,(40,0,60)),(0.6,(60,0,80)),(1.0,(80,0,100))],
-                120, "공허 균열 · 차원 적 전용 · 블랙홀 빈번",
+                3600, "공허의 균열 · 차원 대적자 · 빈번한 블랙홀 발생",
                 enemy_set="void", special=["frequent_blackhole","void_enemies"],
             ),
             "5": Chapter(
-                "Gravity Well", "SHIP", -0.05,
+                "싱귤래리티 코어", "SHIP", -0.05,
                 [(0.0,(40,10,20)),(0.3,(60,5,5)),(0.6,(10,10,60)),(1.0,(5,40,50))],
-                150, "중력 웰 · 극강 난이도 · 모든 적 등장",
+                3600, "중력 우물 · 극한의 난이도 · 모든 적 출현",
                 enemy_set="all",
             ),
             "6": Chapter(
-                "Abyss Sovereign", "SHIP", -0.03,
+                "최종 수렴점", "SHIP", -0.03,
                 [(0.0,(0,10,30)),(0.3,(0,5,50)),(0.7,(20,0,60)),(1.0,(40,0,80))],
-                180, "최종 챕터 · 심연의 군주 · 블랙홀 지옥",
-                enemy_set="all", special=["frequent_blackhole","void_enemies","abyss_enemies","mega_bosses"],
-            ),
+                3600, "승천한 심연 · 군주의 존재 · 블랙홀 지옥",
+                enemy_set="all", special=["frequent_blackhole","void_enemies","abyss_enemies","mega_bosses","diving"],
+            )
         }
+
+
         self.current_chapter = None
 
         self.enemies           = pygame.sprite.Group()
@@ -184,8 +211,11 @@ class GameManager:
         self.structures        = pygame.sprite.Group()
         self.fluids            = pygame.sprite.Group()
         self.companions        = pygame.sprite.Group()
+        self.allies            = pygame.sprite.Group()
         self.items             = pygame.sprite.Group()
         self.player            = None
+        self.freeze_timer      = 0
+        self.shop_scroll_y     = 0
 
         self.game_time   = 0
         self.spawn_timer = 0
@@ -201,9 +231,38 @@ class GameManager:
         self.shake_amount = 0
         self.item_timer   = 0
 
+        from entities import PERSISTENT_UPGRADES
+        self.gold     = 0
+        self.diamonds = 0
+        self.crystals = 0  # Legacy or for special use
+        self.upgrades = {k: 0 for k in PERSISTENT_UPGRADES}
+        self.owned_skills = {}  # {skill_name: level}
+        self.shop_sel = 0
+
+        # ★ 리워드 룰렛 관련
+        self.reward_roulette_active = False
+        self.reward_roulette_timer  = 0
+        self.reward_roulette_idx    = 0
+        self.reward_roulette_result = None
+        self.reward_roulette_flash  = 0
+        self.last_roulette_time     = 0   # ★ 룰렛 쿨타임용 (Unix Timestamp)
+        
+        # ★ 사용자 프로필 (설정에서 변경 가능)
+        self.pilot_name = "KIM"
+        self.pilot_rank = "COMMANDER"
+        self.pilot_callsign = "RAVEN-01"
+
+        self._load_data()
+        
+        # ★ 프리미엄 UI 효과용 서피스
+        self.scanline_surf = pygame.Surface((800, 600), pygame.SRCALPHA)
+        for y in range(0, 600, 3):
+            pygame.draw.line(self.scanline_surf, (0, 0, 0, 45), (0, y), (800, y))
+
+
+
     # ─────────────────────────────────────
     def start_game(self, chapter_id):
-        # 색상 선택 화면 먼저
         self.pending_chapter_id  = chapter_id
         self.color_select_active = True
         self.color_select_idx    = 0
@@ -213,15 +272,15 @@ class GameManager:
         ch = self.chapters[chapter_id]
         self.current_chapter = ch
         self.player = Player((0,0))
+        self.player.active_skills = list(self.owned_skills) # ★ 보유 스킬 부여
         self.player.mode = ch.mode
         self.player.set_dimension("PHYSICAL")
-        # 색상 선택 적용
         self.player.ship_color_key = SHIP_COLORS[self.color_select_idx]["key"]
         self.dimension = "PHYSICAL"
         self.camera_offset = Vector2(-400,-300)
         self.abyss_active = False
         self.abyss_timer  = 0
-        self.blackholes   = []
+        self.blackholes.empty()
         self.bh_spawn_cd  = 0
         self.bh_suck_timer  = 0
         self.bh_suck_target = None
@@ -234,19 +293,20 @@ class GameManager:
         self.rift_particles.clear()
         self.form_select_active = False
         self.rift_boss_kill_count = 0
+        self.dive_spawn_timer = 0
+        self.streak_flash_timer = 0
 
         for g in [self.enemies, self.projectiles, self.enemy_projectiles,
-                  self.gems, self.structures, self.fluids, self.companions, self.items]:
+                  self.gems, self.structures, self.fluids, self.companions, self.allies, self.items]:
             g.empty()
         self.particles.clear()
+        self.freeze_timer = 0
 
-        # 심해 챕터 — 심해함 기본 지급
         if "abyss" in ch.enemy_set or "3" == chapter_id:
             if "abyss_ship" not in self.player.unlocked_forms:
                 self.player.unlocked_forms.append("abyss_ship")
             self.player.morph_to("abyss_ship")
 
-        # 월드 구조물 배치
         if ch.mode == "HUMAN":
             for _ in range(25):
                 wx = random.randint(-2500,2500); wy = random.randint(-2500,2500)
@@ -262,7 +322,25 @@ class GameManager:
         self.state          = "PLAYING"
         self.levelup_active = False
         self.item_timer     = 0
-        self.notify("WASD 이동  SPACE 대쉬  SHIFT 차원전환  F 변형", 220)
+
+        if "diving" in ch.special:
+            self.notify("WASD이동  SPACE대쉬  SHIFT차원전환  F변형  [Z]심해잠수!", 260)
+        else:
+            self.notify("WASD 이동  SPACE 대쉬  SHIFT 차원전환  F 변형", 220)
+
+        # ★ 영구 업그레이드 적용
+        for k in self.upgrades:
+            self._apply_permanent_boost(k)
+        u = self.upgrades
+        self.player.max_health += u.get("hp_boost", 0) * 10
+        self.player.health = self.player.max_health
+        self.player.max_shield += u.get("shield_boost", 0) * 5
+        self.player.shield = self.player.max_shield
+        # 속도, CDR 등은 Player.get_speed_mult 등에서 적용되도록 entities.py 수정 필요 또는 여기서 직접 속성 부여
+        self.player._speed_upg_mult = 1.0 + u.get("speed_boost", 0) * 0.03
+        self.player._xp_upg_mult    = 1.0 + u.get("xp_bonus", 0) * 0.05
+        self.player._dash_cdr_mult  = 1.0 - u.get("dash_cdr", 0) * 0.05
+
 
     # ─────────────────────────────────────
     def notify(self, text, duration=120):
@@ -303,32 +381,28 @@ class GameManager:
                 math.cos(math.radians(angle))*dist,
                 math.sin(math.radians(angle))*dist)
             bh = Blackhole(pos)
-            self.blackholes.append(bh)
+            self.blackholes.add(bh)
             self.bh_spawn_cd = 600
             self.notify("⚫ 블랙홀 발생!", 120)
             self.screen_shake(8, 10)
             self._burst(pos, (180,0,255), count=30, speed=8, life=50)
 
     def _update_blackholes(self):
-        # 흡입 트랜지션 처리 중이면 일반 업데이트 스킵
         if self.bh_suck_timer > 0:
             self.bh_suck_timer -= 1
             if self.bh_suck_timer == 30:
-                self.bh_flash_timer = 25  # 화이트 플래시 시작
+                self.bh_flash_timer = 25
             if self.bh_suck_timer == 0:
                 self._enter_rift()
             return
 
-        for bh in self.blackholes[:]:
+        for bh in self.blackholes:
             bh.update()
-            # 블랙홀 인력 — 플레이어
             pull = bh.apply_pull(self.player.world_pos, self.player.vel)
             self.player.vel += pull
-            # 블랙홀 인력 — 적
             for enemy in self.enemies:
                 p = bh.apply_pull(enemy.world_pos, enemy.vel)
                 enemy.world_pos += p * 2
-            # 블랙홀 안으로 들어온 적/탄 흡수
             for enemy in list(self.enemies):
                 d = (bh.world_pos - enemy.world_pos).length()
                 if d < bh.radius:
@@ -340,10 +414,9 @@ class GameManager:
                 if d < bh.radius + 20:
                     ep.kill()
 
-            # ── 플레이어가 블랙홀 코어에 흡입됨 ──
             player_d = (bh.world_pos - self.player.world_pos).length()
             if player_d < bh.radius * 0.6 and not self.rift_active and self.bh_suck_timer == 0:
-                self.bh_suck_timer  = 60   # 1초 트랜지션
+                self.bh_suck_timer  = 60
                 self.bh_suck_target = bh
                 self.rift_player_hp_save  = self.player.health
                 self.rift_player_pos_save = Vector2(self.player.world_pos)
@@ -352,12 +425,10 @@ class GameManager:
                 self.notify("⚫ 블랙홀에 흡입됨! 제3차원으로...", 100)
                 return
 
-            # 블랙홀 소멸 → 심해 차원 활성
             if not bh.alive:
-                self.blackholes.remove(bh)
+                bh.kill()
                 self._activate_abyss(bh.world_pos)
 
-        # ABYSS 차원 타이머
         if self.abyss_active:
             self.abyss_timer -= 1
             self.player.abyss_mode = True
@@ -369,13 +440,11 @@ class GameManager:
             self.player.abyss_mode = False
 
     def _activate_abyss(self, center_pos):
-        """블랙홀 소멸 후 1분간 심해 차원 활성화"""
         self.abyss_active = True
         self.abyss_timer  = self.ABYSS_DURATION
         self.notify("⚠ 심해 차원 개방! 60초", 200)
         self.screen_shake(15, 20)
         self._burst(center_pos, (0,200,255), count=50, speed=10, life=80)
-        # 심해 적 대량 소환
         for _ in range(8):
             angle = random.uniform(0,360)
             dist  = random.uniform(200,450)
@@ -383,15 +452,13 @@ class GameManager:
                                           math.sin(math.radians(angle))*dist)
             etype = random.choice(["abyss_eel","depth_guardian","leviathan_eye"])
             self.enemies.add(Enemy(sp, "PHYSICAL", etype, self.difficulty+1))
-        # 아이템 드롭
         self._drop_item_at(center_pos, "shield")
         self._drop_item_at(center_pos + Vector2(50,0), "hp")
 
     # ─────────────────────────────────────
-    #  RIFT DIMENSION (제3차원)
+    #  RIFT DIMENSION
     # ─────────────────────────────────────
     def _enter_rift(self):
-        """블랙홀 흡입 → 제3차원 진입"""
         self.rift_active = True
         self.rift_timer  = 0
         self.rift_enemies.empty()
@@ -399,35 +466,23 @@ class GameManager:
         self.rift_ep.empty()
         self.rift_particles.clear()
 
-        # ── 처치 횟수에 따라 보스 선택 및 강화 ──────────
         RIFT_BOSS_POOL = [
-            "rift_guardian",
-            "rift_devourer",
-            "void_wraith_king",
-            "rift_colossus",
-            "entropy_core",
-            "abyss_rift_lord",
+            "rift_guardian","rift_devourer","void_wraith_king",
+            "rift_colossus","entropy_core","abyss_rift_lord",
         ]
         k = self.rift_boss_kill_count
-        # 처치 횟수에 따라 점점 강한 보스 등장 (순환)
         boss_idx  = k % len(RIFT_BOSS_POOL)
         boss_type = RIFT_BOSS_POOL[boss_idx]
+        scale_mult = 1.0 + k * 0.35
 
-        # 누적 강화 배율: 처치할 때마다 HP·속도 상승
-        scale_mult = 1.0 + k * 0.35   # k=0→×1.0, k=1→×1.35, k=2→×1.70 …
-
-        # 보스 생성 후 능력치 직접 보정
         boss_pos = Vector2(0, -200)
         boss_diff = self.difficulty + 1 + k * 0.5
         self.rift_boss = Enemy(boss_pos, "PHYSICAL", boss_type, boss_diff)
-        # HP 스케일
         self.rift_boss.hp     = int(self.rift_boss.max_hp * scale_mult)
         self.rift_boss.max_hp = self.rift_boss.hp
-        # 속도 스케일 (최대 3배까지)
         self.rift_boss.speed  = min(self.rift_boss.speed * (1 + k * 0.15), self.rift_boss.speed * 3)
         self.rift_enemies.add(self.rift_boss)
 
-        # 주변 잡몹 수도 kill count에 따라 증가 (최대 8마리)
         minion_count = min(4 + k, 8)
         minion_pool  = ["null_fragment","void_titan","echo_phantom",
                         "glitcher","shadow_lurker","abyss_eel"]
@@ -435,10 +490,8 @@ class GameManager:
             a  = i * (360 // minion_count)
             sp = Vector2(math.cos(math.radians(a))*250, math.sin(math.radians(a))*250)
             mtype = random.choice(minion_pool)
-            self.rift_enemies.add(Enemy(sp, "PHYSICAL", mtype,
-                                        self.difficulty + k * 0.3))
+            self.rift_enemies.add(Enemy(sp, "PHYSICAL", mtype, self.difficulty + k * 0.3))
 
-        # 플레이어 위치 리셋 (제3차원 중앙)
         self.player.world_pos = Vector2(0, 0)
         self.player.vel       = Vector2(0, 0)
         self.camera_offset    = Vector2(-400, -300)
@@ -453,34 +506,41 @@ class GameManager:
         self.screen_shake(18, 25)
 
     def _update_rift(self, keys, events):
-        """제3차원 업데이트 루프"""
         self.rift_timer += 1
 
-        # 플레이어 이동
         friction = -0.18
         self.player.update(keys, friction, self.current_chapter.mode, self.mouse_pos)
         self._update_camera()
 
-        # 자동 사격
         self.player.timer += 1
         if self.player.timer > self.player.weapon_cooldown:
             self.player.timer = 0
             self._rift_auto_shoot()
 
-        # 이벤트 처리 (마우스 클릭 수동 사격)
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._rift_manual_shoot(event.pos)
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1: self._use_skill(0)
+                elif event.key == pygame.K_2: self._use_skill(1)
+                elif event.key == pygame.K_3: self._use_skill(2)
+                elif event.key == pygame.K_4: self._use_skill(3)
+                elif event.key == pygame.K_5: self._use_skill(4)
+                elif event.key == pygame.K_6: self._use_skill(5)
 
-        # 적 업데이트
+
         rift_list = list(self.rift_enemies)
         for enemy in rift_list:
+            if self.freeze_timer > 0 and enemy.special != "phase_boss":
+                continue
             enemy.update(self.player.world_pos,
                          enemy_projectiles=self.rift_ep,
                          dimension="PHYSICAL",
                          all_enemies=rift_list)
 
-        # 플레이어 탄 vs 적
+        for ally in self.allies:
+            ally.update(self.rift_enemies, self.rift_projectiles, "PHYSICAL", self.camera_offset)
+
         for p in list(self.rift_projectiles):
             p.update()
             p_r = pygame.Rect(p.world_pos.x-6, p.world_pos.y-6, 12,12)
@@ -491,6 +551,13 @@ class GameManager:
                 if er.colliderect(p_r):
                     dmg = int(p.dmg * self.player.get_dmg_mult())
                     if enemy.take_damage(dmg):
+                        # ★ 리프트 내 뇌창 폭발
+                        if getattr(p, "special", None) == "thunder_spear":
+                            self._burst(p.world_pos, (255,100,0), count=30, speed=8)
+                            for e_near in list(self.rift_enemies):
+                                if (e_near.world_pos - p.world_pos).length() < 120:
+                                    e_near.take_damage(p.dmg)
+
                         self._rift_burst(enemy.world_pos, (200,50,255), count=18)
                         if enemy is self.rift_boss:
                             self.rift_boss = None
@@ -500,7 +567,6 @@ class GameManager:
                         p.kill()
                     break
 
-        # 적 탄 업데이트 & 피격
         player_wr = pygame.Rect(self.player.world_pos.x-14, self.player.world_pos.y-14, 28,28)
         for ep in list(self.rift_ep):
             ep.update()
@@ -510,11 +576,11 @@ class GameManager:
                 self.screen_shake(5,6)
                 ep.kill()
                 if self.player.health <= 0:
+                    self._grant_death_rewards()
                     self.state = "DEATH"
                     self.high_score = max(self.high_score, self.player.score)
                     return
 
-        # 접촉 데미지
         if self.player.invincible <= 0:
             for enemy in list(self.rift_enemies):
                 er = pygame.Rect(enemy.world_pos.x-enemy.rect.w//2,
@@ -524,16 +590,15 @@ class GameManager:
                     actual = self.player.take_hit(15)
                     self.screen_shake(6,8)
                     if self.player.health <= 0:
+                        self._grant_death_rewards()
                         self.state = "DEATH"
                         self.high_score = max(self.high_score, self.player.score)
                         return
         if self.player.invincible > 0:
             self.player.invincible -= 1
 
-        # 파티클
         self.rift_particles = [p for p in self.rift_particles if p.update()]
 
-        # 보스 처치 확인 → 탈출
         if self.rift_boss is None or not self.rift_boss.alive():
             self._exit_rift()
 
@@ -572,26 +637,20 @@ class GameManager:
                                                 life+random.randint(-5,5), random.randint(2,5)))
 
     def _exit_rift(self):
-        """제3차원 탈출 → 원래 차원 복귀"""
         self.rift_active = False
         self.player.world_pos = Vector2(self.rift_player_pos_save)
         self.player.vel       = Vector2(0,0)
         self.camera_offset    = self.player.world_pos - Vector2(400, 300)
-        # 블랙홀 제거 (흡입한 블랙홀)
         if self.bh_suck_target in self.blackholes:
-            self.blackholes.remove(self.bh_suck_target)
+            self.bh_suck_target.kill()
         self.bh_suck_target = None
 
-        # ── 균열 보스 처치 카운트 증가 및 보상 ──────────
         self.rift_boss_kill_count += 1
         k = self.rift_boss_kill_count
         bonus_score = 500 + (k - 1) * 300
         self.player.score += bonus_score
-        # HP 회복 (처치 수 많을수록 조금 줄어듦, 최소 20)
         hp_bonus = max(20, 50 - (k - 1) * 5)
-        self.player.health = min(self.player.max_health,
-                                 self.player.health + hp_bonus)
-        # 매 3회마다 사격 속도 보너스
+        self.player.health = min(self.player.max_health, self.player.health + hp_bonus)
         extra = ""
         if k % 3 == 0:
             self.player._cd_bonus += 1
@@ -604,10 +663,6 @@ class GameManager:
             f"✨ 제3차원 탈출! HP+{hp_bonus}  SCORE+{bonus_score}"
             f"  [보스처치:{k}회]{extra}", 280)
 
-
-
-    # ─────────────────────────────────────
-    #  DIMENSION SHIFT → blackhole chance
     # ─────────────────────────────────────
     def _on_dimension_shift(self):
         prob = 0.30 if "frequent_blackhole" in self.current_chapter.special else 0.15
@@ -615,15 +670,14 @@ class GameManager:
             self._force_spawn_blackhole()
 
     def _force_spawn_blackhole(self):
-        if len(self.blackholes) >= 4:
-            return
+        if len(self.blackholes) >= 4: return
         angle = random.uniform(0,360)
         dist  = random.uniform(150, 350)
         pos   = self.player.world_pos + Vector2(
             math.cos(math.radians(angle))*dist,
             math.sin(math.radians(angle))*dist)
         bh = Blackhole(pos)
-        self.blackholes.append(bh)
+        self.blackholes.add(bh)
         self.notify("⚫ 차원 충격! 블랙홀 발생!", 130)
         self.screen_shake(10, 12)
         self._burst(pos, (200,50,255), count=20, speed=7, life=45)
@@ -637,31 +691,30 @@ class GameManager:
         if self.shake_timer   > 0: self.shake_timer   -= 1
         if self.bh_flash_timer > 0: self.bh_flash_timer -= 1
         if self.roulette_flash > 0: self.roulette_flash -= 1
+        if self.streak_flash_timer > 0: self.streak_flash_timer -= 1
 
-        # ── 설정 창 전역 처리 ────────────────────────────
         if self.settings_open:
             for event in events:
                 self._handle_settings_input(event)
             return
 
-        # ── 룰렛 진행 ───────────────────────────────────
-        if self.roulette_active and self.state == "MENU":
-            self.roulette_timer += 1
-            t = self.roulette_timer / self.roulette_duration  # 0→1
-            # 감속 곡선: easeOut — 초반 빠르게, 후반 느리게
-            speed = max(1, int(7 - t * 6.2))
-            if self.roulette_timer % speed == 0:
-                self.roulette_idx = (self.roulette_idx + 1) % 6
-            if self.roulette_timer >= self.roulette_duration:
-                # 마지막에 target 위치로 snap
-                target = getattr(self, '_roulette_target', random.randint(0, 5))
-                self.roulette_idx    = target
-                self.roulette_active = False
-                self.roulette_result = str(target + 1)
-                self.roulette_flash  = 150
+        # 챕터 룰렛 시스템 제거됨
+
+
+        # ★ 리워드 룰렛 업데이트
+        if self.reward_roulette_active:
+            self.reward_roulette_timer += 1
+            dur = 120
+            t = self.reward_roulette_timer / dur
+            speed = max(1, int(10 - t * 9))
+            if self.reward_roulette_timer % speed == 0:
+                self.reward_roulette_idx = (self.reward_roulette_idx + 1) % 8
+            if self.reward_roulette_timer >= dur:
+                self.reward_roulette_active = False
+                self._apply_reward_roulette_result()
+                self.reward_roulette_flash = 120
             return
 
-        # 색상 선택 화면
         if self.state == "COLOR_SELECT":
             for event in events:
                 if event.type == pygame.KEYDOWN:
@@ -688,15 +741,23 @@ class GameManager:
                             self.color_select_idx = i
                             self._do_start_game(self.pending_chapter_id)
                             break
+                            break
             return
 
-        # 제3차원 전투
+        if self.state == "SHOP":
+            for event in events:
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL, pygame.MOUSEMOTION):
+                    self._handle_shop_mouse(event)
+                else:
+                    self._handle_shop_input(event)
+            return
+
         if self.rift_active:
+
             keys = pygame.key.get_pressed()
             self._update_rift(keys, events)
             return
 
-        # 변형 선택 UI
         if self.form_select_active:
             for event in events:
                 if event.type == pygame.KEYDOWN:
@@ -715,7 +776,6 @@ class GameManager:
                         self.form_select_active = False
             return
 
-        # 레벨업
         if self.levelup_active:
             for event in events:
                 if event.type == pygame.KEYDOWN:
@@ -724,19 +784,69 @@ class GameManager:
                     elif event.key == pygame.K_3 and len(self.levelup_choices)>=3: self._apply_levelup_choice(2)
             return
 
+        if self.state == "MENU":
+            self.game_time += 1
+            self._handle_menu_input(events)
+            return
+
+        if self.state == "DEATH":
+            for event in events:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                    self.state = "MENU"
+            return
+            
+        if self.state == "WIN":
+            for event in events:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+                    self.state = "MENU"
+            return
+            
         if self.state != "PLAYING":
-            if self.state == "MENU":
-                self.game_time += 1   # 메뉴 룰렛 애니메이션용 타이머
             return
 
         keys = pygame.key.get_pressed()
         self.game_time += 1
         progress = min(1.0, self.game_time / (self.current_chapter.duration * 60))
-        self.difficulty = 1.0 + progress * 4.5
+        # 레벨 보너스: 레벨당 난이도 0.5 증가
+        level_bonus = (self.player.level - 1) * 0.5
+        self.difficulty = 1.0 + progress * 4.5 + level_bonus
+
+        # ★ 심해 잠수 키 처리 (Z키, diving 챕터 전용)
+        is_diving_chapter = "diving" in self.current_chapter.special
+        diving_key = keys[pygame.K_z]
+        self.player.update_dive(diving_key, is_diving_chapter)
+
+        # 잠수 시 산소 0 데미지 체크
+        if self.player.dive_active and self.player.dive_oxygen <= 0:
+            if self.notify_timer <= 0:
+                self.notify("⚠ 산소 부족! 수면으로 올라오세요!", 60)
+            if self.player.health <= 0:
+                self._grant_death_rewards()
+                self.state = "DEATH"
+                self.high_score = max(self.high_score, self.player.score)
+                return
+
+        # 잠수 중 심해 적 추가 소환
+        if self.player.dive_active and self.player.dive_depth > 30:
+            self.dive_spawn_timer += 1
+            if self.dive_spawn_timer > 120:
+                self.dive_spawn_timer = 0
+                angle = random.uniform(0,360)
+                dist  = random.uniform(200,400)
+                sp    = self.player.world_pos + Vector2(math.cos(math.radians(angle))*dist,
+                                                         math.sin(math.radians(angle))*dist)
+                etype = "deep_angler" if random.random() < 0.6 else "abyss_eel"
+                self.enemies.add(Enemy(sp, "PHYSICAL", etype, self.difficulty + self.player.dive_depth/50))
+                # 아이템 드롭 (심해 크리스탈)
+                if random.random() < 0.3:
+                    crystal_pos = self.player.world_pos + Vector2(
+                        random.uniform(-150,150), random.uniform(-150,150))
+                    self._drop_item_at(crystal_pos, "abyss_crystal")
+        else:
+            self.dive_spawn_timer = max(0, self.dive_spawn_timer - 1)
 
         for event in events:
             if event.type == pygame.KEYDOWN:
-                # 설정 창 토글 (ESC 또는 TAB)
                 if event.key == pygame.K_ESCAPE or event.key == pygame.K_TAB:
                     self.settings_open = not self.settings_open
                     self.settings_sel  = 0
@@ -758,7 +868,15 @@ class GameManager:
                                 (200,100,255) if self.dimension=="VOID" else (0,200,255),
                                 count=20, speed=6)
                     self.notify(f"차원 전환 → {self.dimension}", 80)
-                    self._on_dimension_shift()   # ← 블랙홀 확률 발생
+                    self._on_dimension_shift()
+                
+                # ★ 스킬 사용 [1, 2, 3, 4, 5, 6]
+                if event.key == pygame.K_1: self._use_skill(0)
+                elif event.key == pygame.K_2: self._use_skill(1)
+                elif event.key == pygame.K_3: self._use_skill(2)
+                elif event.key == pygame.K_4: self._use_skill(3)
+                elif event.key == pygame.K_5: self._use_skill(4)
+                elif event.key == pygame.K_6: self._use_skill(5)
                 elif event.key == pygame.K_q:
                     self.player.switch_weapon(-1)
                     self.notify(f"무기: {self.player.weapon['name']}", 80)
@@ -774,17 +892,18 @@ class GameManager:
                         self.form_select_idx = self.player.unlocked_forms.index(self.player.ship_form)
                     else:
                         self.notify("해금된 변형 없음. 레벨업 시 획득!", 100)
+                # ★ Z키 안내 알림
+                elif event.key == pygame.K_z and not is_diving_chapter:
+                    self.notify("이 챕터에서는 잠수 불가! (챕터3·6 전용)", 90)
 
-        # 물리
         if self.settings_open:
-            return   # 설정 창 열린 동안은 게임 일시정지
+            return
 
         friction = self.current_chapter.friction
         buoyancy = 0
         for f in self.fluids:
             if f.get_world_rect().collidepoint(self.player.world_pos.x, self.player.world_pos.y):
                 friction *= 2; buoyancy = f.buoyancy
-        # 심해 중력 특수
         if "deep_gravity" in self.current_chapter.special:
             buoyancy += 0.05
 
@@ -801,65 +920,78 @@ class GameManager:
         self._try_spawn_blackhole()
         self._update_blackholes()
 
-        # 적 소환
         self.spawn_timer += 1
         interval = max(3, int(35 - self.difficulty * 3))
         if self.spawn_timer > interval:
             self.spawn_timer = 0
             self._spawn_enemy(progress)
 
-        # 아이템 타이머
         self.item_timer += 1
         if self.item_timer > 600:
             self.item_timer = 0
             self._drop_random_item()
 
-        # 자동사격
         self.player.timer += 1
         if self.player.timer > self.player.weapon_cooldown:
             self.player.timer = 0
             self._auto_shoot()
 
-        # 동반자
         for comp in self.companions:
             comp.update(self.enemies, self.projectiles, self.dimension, self.camera_offset)
 
-        # 투사체 이동
+        for ally in self.allies:
+            ally.update(self.enemies, self.projectiles, self.dimension, self.camera_offset)
+
+        if self.freeze_timer > 0:
+            self.freeze_timer -= 1
+
         for p in list(self.projectiles):
             p.update()
         for ep in list(self.enemy_projectiles):
             ep.update()
 
-        # 적 이동
         enemy_list = list(self.enemies)
         for enemy in enemy_list:
+            if self.freeze_timer > 0 and enemy.special != "phase_boss":
+                continue # 보스급 제외 일반 적 정지
             if enemy.dimension_type == self.dimension or self.abyss_active:
                 enemy.update(self.player.world_pos,
                              enemy_projectiles=self.enemy_projectiles,
                              dimension=self.dimension,
                              all_enemies=enemy_list)
+                if enemy.special == "gravity_vacuum":
+                    dist = (self.player.world_pos - enemy.world_pos).length()
+                    if dist < 400:
+                        pull = (enemy.world_pos - self.player.world_pos).normalize() * 1.5
+                        self.player.world_pos += pull
 
-        # 플레이어 접촉 데미지
         player_wr2 = pygame.Rect(self.player.world_pos.x-14, self.player.world_pos.y-14, 28,28)
-        if self.player.invincible <= 0:
-            for enemy in list(self.enemies):
-                if enemy.dimension_type == self.dimension or self.abyss_active:
-                    er = pygame.Rect(enemy.world_pos.x-enemy.rect.w//2,
-                                     enemy.world_pos.y-enemy.rect.h//2,
-                                     enemy.rect.w, enemy.rect.h)
-                    if er.colliderect(player_wr2):
-                        dmg = 20 if enemy.max_hp >= 100 else (10 if enemy.max_hp >= 20 else 5)
+        if self.player.skill_titan_timer > 0:
+            player_wr2 = pygame.Rect(self.player.world_pos.x-30, self.player.world_pos.y-30, 60,60)
+            
+        for enemy in list(self.enemies):
+            if enemy.dimension_type == self.dimension or self.abyss_active:
+                er = pygame.Rect(enemy.world_pos.x-enemy.rect.w//2,
+                                 enemy.world_pos.y-enemy.rect.h//2,
+                                 enemy.rect.w, enemy.rect.h)
+                if er.colliderect(player_wr2):
+                    if self.player.skill_titan_timer > 0:
+                        enemy.take_damage(50)
+                        self._burst(enemy.world_pos, (255,100,0), count=10)
+                    elif self.player.invincible <= 0:
+                        base_dmg = 20 if enemy.max_hp >= 100 else (10 if enemy.max_hp >= 20 else 5)
+                        dmg = base_dmg + getattr(enemy, "dmg_bonus", 0)
                         actual = self.player.take_hit(dmg)
                         self.screen_shake(6,8)
                         self.notify(f"피격! HP -{actual}" if actual>0 else "쉴드 흡수!", 50)
                         if self.player.health <= 0:
+                            self._grant_death_rewards()
                             self.state = "DEATH"
                             self.high_score = max(self.high_score, self.player.score)
                             return
         if self.player.invincible > 0:
             self.player.invincible -= 1
 
-        # 적 투사체 vs 플레이어
         for ep in list(self.enemy_projectiles):
             if ep.dimension == self.dimension or self.abyss_active:
                 ep_r = pygame.Rect(ep.world_pos.x-7, ep.world_pos.y-7, 14,14)
@@ -869,11 +1001,11 @@ class GameManager:
                     self.notify(f"피격! HP -{actual}" if actual>0 else "쉴드 흡수!", 50)
                     ep.kill()
                     if self.player.health <= 0:
+                        self._grant_death_rewards()
                         self.state = "DEATH"
                         self.high_score = max(self.high_score, self.player.score)
                         return
 
-        # 플레이어 탄 vs 적
         for p in list(self.projectiles):
             p_r = pygame.Rect(p.world_pos.x-6, p.world_pos.y-6, 12,12)
             for enemy in list(self.enemies):
@@ -882,12 +1014,25 @@ class GameManager:
                                      enemy.world_pos.y-enemy.rect.h//2,
                                      enemy.rect.w, enemy.rect.h)
                     if er.colliderect(p_r):
+                        # ★ 뇌창 폭발 처리
+                        if getattr(p, "special", None) == "thunder_spear":
+                            pos = p.world_pos
+                            self._burst(pos, (255,100,0), count=40, speed=10, life=30)
+                            self.screen_shake(20, 15)
+                            for e_near in list(self.enemies):
+                                dist = (e_near.world_pos - pos).length()
+                                if dist < 120:
+                                    e_near.take_damage(p.dmg)
+                                    self._burst(e_near.world_pos, (255,255,255), count=5)
+                        
                         dmg = int(p.dmg * self.player.get_dmg_mult())
                         if enemy.take_damage(dmg):
                             data = ENEMY_DATA.get(enemy.etype, {})
                             col  = data.get("cp",(255,100,0)) if self.dimension=="PHYSICAL" else data.get("cv",(255,0,200))
                             self._burst(enemy.world_pos, col, count=15, speed=5, life=35)
-                            if enemy.max_hp >= 20: self.screen_shake(10,12)
+                            # ★ 쥬스 효과 (타격감)
+                            shake_pow = 10 if enemy.max_hp >= 20 else 4
+                            self.screen_shake(shake_pow, 8 if shake_pow==4 else 12)
                             self.gems.add(Gem(enemy.world_pos, enemy.gem_val))
                             if random.random() < 0.10: self._drop_item_at(enemy.world_pos)
                             combo = self.player.kill_combo()
@@ -896,22 +1041,30 @@ class GameManager:
                             self.player.score += pts
                             if combo % 5 == 0 and combo >= 5:
                                 self.notify(f"COMBO ×{combo}!  ×{mult:.1f}", 90)
+                            # ★ 연속킬 streak 이펙트
+                            sk = self.player.streak_kills
+                            if sk > 0 and sk % 5 == 0:
+                                self.streak_flash_timer = 45
+                                self.streak_flash_count = sk
+                                self._burst(enemy.world_pos, (255,220,0), count=30, speed=8, life=45)
+                                self.screen_shake(12, 15)
                             enemy.kill()
                         if enemy.special != "phase_boss":
                             p.kill()
                         break
 
-        # 젬 수집
         for gem in list(self.gems):
             gem.update()
             if (self.player.world_pos - gem.world_pos).length() < 32:
-                self.player.xp += gem.value
+                # ★ 영구 업그레이드 XP 보너스 적용
+                xp_gain = gem.value * getattr(self.player, "_xp_upg_mult", 1.0)
+                self.player.xp += xp_gain
                 self._burst(gem.world_pos, (0,255,150), count=5, speed=3, life=18)
                 if self.player.xp >= self.player.xp_to_next:
                     self._trigger_levelup()
                 gem.kill()
 
-        # 아이템 수집
+
         for item in list(self.items):
             if not item.update():
                 item.kill(); continue
@@ -923,18 +1076,14 @@ class GameManager:
         self.particles = [p for p in self.particles if p.update()]
 
         if self.game_time > self.current_chapter.duration * 60:
-            # ── 최종 보스가 살아있는 동안은 절대 끝나지 않음 ──────────────
             final_bosses = ["void_god","abyss_sovereign","nexus_overmind","abyssal_tyrant"]
             alive_finals = [e for e in self.enemies if e.etype in final_bosses]
             if alive_finals:
-                # 보스 살아있으면 game_time 동결 (difficulty 중복 증가 방지)
                 self.game_time = self.current_chapter.duration * 60
-                # notify_timer가 0일 때만 알림 (스팸 방지)
                 if self.notify_timer <= 0:
                     boss_name = alive_finals[0].name
                     self.notify(f"★ {boss_name}를 처치해야 클리어! ★", 240)
                 return
-            # ── 최종 보스 강제 소환 (한 번만) ────────────────────────────
             if "mega_bosses" in self.current_chapter.special:
                 for fb in ["void_god","abyss_sovereign"]:
                     if not any(e.etype == fb for e in self.enemies):
@@ -949,7 +1098,6 @@ class GameManager:
                         self.game_time = self.current_chapter.duration * 60
                         return
             else:
-                # 일반 챕터 — nexus/abyssal 둘 다 체크
                 general_final = ["nexus_overmind","abyssal_tyrant"]
                 for fb in general_final:
                     if not any(e.etype == fb for e in self.enemies):
@@ -963,113 +1111,113 @@ class GameManager:
                         self.screen_shake(20, 25)
                         self.game_time = self.current_chapter.duration * 60
                         return
-            # 모든 최종보스 처치 완료 → 진짜 클리어
             self.high_score = max(self.high_score, self.player.score)
             self.state = "WIN"
 
     # ─────────────────────────────────────
-    #  SETTINGS WINDOW
+    #  SETTINGS
     # ─────────────────────────────────────
     def _handle_settings_input(self, event):
-        """설정 창이 열려있을 때 입력 처리"""
-        if event.type != pygame.KEYDOWN:
-            return
+        if event.type != pygame.KEYDOWN: return
         keys_order = SETTINGS.KEYS_ORDER
         n = len(keys_order)
+        if event.key == pygame.K_z:
+            # 설정 선택된 항목이 프로필 영역(0,1,2)일 때 이름/랭크 등 변경 사이클
+            if self.settings_sel == 0:
+                names = ["KIM", "LEE", "PARK", "CHOI", "GHOST", "REAPER"]
+                idx = (names.index(self.pilot_name) + 1) % len(names) if self.pilot_name in names else 0
+                self.pilot_name = names[idx]; self._save_data()
+            elif self.settings_sel == 1:
+                ranks = ["RECRUIT", "PILOT", "COMMANDER", "ACE", "VETERAN"]
+                idx = (ranks.index(self.pilot_rank) + 1) % len(ranks) if self.pilot_rank in ranks else 0
+                self.pilot_rank = ranks[idx]; self._save_data()
+            elif self.settings_sel == 2:
+                calls = ["RAVEN-01", "PHANTOM", "STRIKER", "NEON-X", "VOID-7"]
+                idx = (calls.index(self.pilot_callsign) + 1) % len(calls) if self.pilot_callsign in calls else 0
+                self.pilot_callsign = calls[idx]; self._save_data()
 
         if event.key in (pygame.K_ESCAPE, pygame.K_TAB):
-            self.settings_open = False
-            return
+            self.settings_open = False; return
         elif event.key == pygame.K_UP:
-            self.settings_sel = (self.settings_sel - 1) % (n + 1)  # +1 for reset row
+            self.settings_sel = (self.settings_sel - 1) % (n + 1 + 3)
         elif event.key == pygame.K_DOWN:
-            self.settings_sel = (self.settings_sel + 1) % (n + 1)
-        elif self.settings_sel < n:
-            # 값 조정
-            key = keys_order[self.settings_sel]
-            label, vmin, vmax, step = SETTINGS.LABELS[key]
-            cur = getattr(SETTINGS, key)
-            if event.key == pygame.K_LEFT:
-                new_val = round(max(vmin, cur - step), 4)
-                setattr(SETTINGS, key, new_val)
-            elif event.key == pygame.K_RIGHT:
-                new_val = round(min(vmax, cur + step), 4)
-                setattr(SETTINGS, key, new_val)
-        elif self.settings_sel == n:
-            # 리셋 버튼
+            self.settings_sel = (self.settings_sel + 1) % (n + 1 + 3)
+        
+        if self.settings_sel >= 3:
+            actual_sel = self.settings_sel - 3
+            if actual_sel < n:
+                key = keys_order[actual_sel]
+                label, vmin, vmax, step = SETTINGS.LABELS[key]
+                cur = getattr(SETTINGS, key)
+                if event.key == pygame.K_LEFT:
+                    new_val = round(max(vmin, cur - step), 4)
+                    setattr(SETTINGS, key, new_val)
+                elif event.key == pygame.K_RIGHT:
+                    new_val = round(min(vmax, cur + step), 4)
+                    setattr(SETTINGS, key, new_val)
+        elif self.settings_sel == n + 3:
             if event.key == pygame.K_RETURN:
                 SETTINGS.reset_defaults()
                 self.notify("설정 초기화 완료!", 90)
 
     def _draw_settings(self):
-        """인게임 설정 오버레이 렌더링"""
         ov = pygame.Surface((800, 600), pygame.SRCALPHA)
         ov.fill((0, 0, 0, 210))
         self.screen.blit(ov, (0, 0))
-
-        # 타이틀
         self.draw_text("⚙  게임 설정", (400, 32), 34, (0, 220, 255))
         self.draw_text("↑↓ 항목 이동   ←→ 값 조정   ESC/TAB 닫기   ENTER 리셋(하단)", (400, 62), 14, (140, 160, 200))
-
         keys_order = SETTINGS.KEYS_ORDER
         n = len(keys_order)
-
-        # 섹션 구분선 위치
         sections = {
-            0: "── SHIP 이동 ──────────────────────",
-            4: "── HUMAN 이동 ─────────────────────",
-            6: "── 대쉬 ────────────────────────────",
-            9: "── 카메라 ──────────────────────────",
+            0: "── COMMANDER PROFILE ([Z]로 변경) ────",
+            3: "── SHIP 이동 ──────────────────────",
+            7: "── HUMAN 이동 ─────────────────────",
+            9: "── 대쉬 ────────────────────────────",
+            12: "── 카메라 ──────────────────────────",
         }
-
-        row_h = 42
-        start_y = 90
-
-        for i, key in enumerate(keys_order):
+        row_h = 42; start_y = 90
+        
+        # ★ 프로필 렌더링 (설정창 내)
+        prof_data = [("NAME", self.pilot_name), ("RANK", self.pilot_rank), ("CALLSIGN", self.pilot_callsign)]
+        for i, (label, val) in enumerate(prof_data):
             y = start_y + i * row_h
-
-            # 섹션 헤더
-            if i in sections:
+            if i == 0: self.draw_text(sections[0], (400, y - 10), 12, (70, 90, 120))
+            sel = (i == self.settings_sel)
+            card_col  = (30, 50, 80) if sel else (15, 20, 35)
+            pygame.draw.rect(self.screen, card_col, (60, y, 680, 32), border_radius=6)
+            self.draw_text(f"{label}: {val}", (200, y + 16), 16, (255, 255, 255) if sel else (140, 150, 170))
+            if sel: self.draw_text("[Z] 키로 변경", (630, y + 16), 12, (0, 200, 255))
+        
+        # 나머지 설정 (오프셋 3 추가)
+        for i, key in enumerate(keys_order):
+            y = start_y + (i + 3) * row_h
+            if (i + 3) in sections:
                 self.draw_text(sections[i], (400, y - 10), 12, (70, 90, 120))
                 y += 8
-
             label, vmin, vmax, step = SETTINGS.LABELS[key]
             cur = getattr(SETTINGS, key)
             sel = (i == self.settings_sel)
-
-            # 배경 카드
             card_col  = (30, 50, 80)  if sel else (15, 20, 35)
             border_col = (0, 200, 255) if sel else (40, 50, 70)
             pygame.draw.rect(self.screen, card_col,  (60, y, 680, 32), border_radius=6)
             pygame.draw.rect(self.screen, border_col, (60, y, 680, 32), 2 if sel else 1, border_radius=6)
-
-            # 라벨
             self.draw_text(label, (200, y + 16), 16, (255, 230, 100) if sel else (180, 190, 210))
-
-            # 슬라이더 바
             bar_x, bar_y, bar_w, bar_h = 360, y + 11, 260, 10
             pygame.draw.rect(self.screen, (30, 30, 50), (bar_x, bar_y, bar_w, bar_h), border_radius=4)
             t = (cur - vmin) / max(vmax - vmin, 0.0001)
             fill_w = max(6, int(bar_w * t))
             fill_col = (0, 200, 255) if sel else (0, 130, 180)
             pygame.draw.rect(self.screen, fill_col, (bar_x, bar_y, fill_w, bar_h), border_radius=4)
-            # 슬라이더 핸들
             hx = bar_x + fill_w
             pygame.draw.circle(self.screen, (255, 255, 255) if sel else (150, 200, 220), (hx, bar_y + 5), 6 if sel else 4)
-
-            # 수치 표시
             if isinstance(step, float):
                 val_str = f"{cur:.2f}"
             else:
                 val_str = str(int(cur))
             self.draw_text(val_str, (670, y + 16), 16, (255, 255, 200) if sel else (160, 170, 180))
-
-            # 최소/최대 힌트
             if sel:
                 if isinstance(step, float):
                     self.draw_text(f"[{vmin:.2f}~{vmax:.2f}  step:{step}]", (400, y + 34), 11, (90, 120, 160))
-
-        # 리셋 버튼 행
         reset_y = start_y + n * row_h + 6
         sel_reset = (self.settings_sel == n)
         rc = (60, 20, 20) if sel_reset else (25, 15, 15)
@@ -1082,12 +1230,12 @@ class GameManager:
     # ─────────────────────────────────────
     def _drop_item_at(self, world_pos, forced=None):
         if forced:
-            self.items.add(PickupItem(world_pos, forced))
-            return
+            self.items.add(PickupItem(world_pos, forced)); return
         itype = random.choices(
-            ["hp","shield","speed","ammo","ship_form"],
-            weights=[0.35, 0.25, 0.20, 0.10, 0.10])[0]
+            ["hp","shield","speed","ammo","ship_form","overload","crystal"],
+            weights=[0.25, 0.20, 0.15, 0.08, 0.08, 0.07, 0.17])[0]
         self.items.add(PickupItem(world_pos, itype))
+
 
     def _drop_random_item(self):
         a = random.uniform(0,360); d = random.uniform(150,400)
@@ -1108,7 +1256,6 @@ class GameManager:
             self.player._cd_bonus += 1
             self.notify("사격 속도 +1!", 90)
         elif itype == "ship_form":
-            # 랜덤 변형 해금
             locked = [k for k in SHIP_FORMS if k not in self.player.unlocked_forms]
             if locked:
                 f = random.choice(locked)
@@ -1117,9 +1264,44 @@ class GameManager:
             else:
                 self.player._cd_bonus += 1
                 self.notify("사격 속도 +1! (모든 변형 해금)", 100)
+        # ★ 새 아이템: 심해 크리스탈
+        elif itype == "abyss_crystal":
+            self.player.health = min(self.player.max_health, self.player.health + 20)
+            self.player.shield = min(self.player.max_shield, self.player.shield + 20)
+            self.player.dive_oxygen = min(self.player.dive_max_oxygen, self.player.dive_oxygen + 180)
+            self.notify("💎 심해 크리스탈! HP+20 쉴드+20 산소+3초", 120)
+            self._burst(self.player.world_pos, (0,220,255), count=25, speed=6, life=40)
+        # ★ 새 아이템: 과부하 코어
+        elif itype == "overload":
+            self.player.overload_timer = 300   # 5초
+            self.notify("⚡ 과부하! 5초간 무적·데미지×2.5·사격×2!", 180)
+            self.screen_shake(12, 15)
+            self._burst(self.player.world_pos, (255,100,0), count=35, speed=9, life=55)
+        # ★ 새 아이템: 차원 크리스탈
+        elif itype == "crystal":
+            self.crystals += 1
+            self.notify("특별 크리스탈 획득! (+1)", 130)
+            self._burst(self.player.world_pos, (255,255,255), count=15, speed=5, life=40)
+        # ★ 새 아이템: 금화
+        elif itype == "gold":
+            amt = random.randint(10, 50)
+            self.gold += amt
+            self.notify(f"금화 획득! (+{amt})", 90)
+            self._burst(self.player.world_pos, (255,215,0), count=10, speed=4, life=30)
+        # ★ 새 아이템: 다이아몬드
+        elif itype == "diamond":
+            self.diamonds += 1
+            self.notify("다이아몬드 발견! (+1)", 150)
+            self._burst(self.player.world_pos, (0,191,255), count=20, speed=6, life=50)
+
+
 
     # ─────────────────────────────────────
     def _spawn_enemy(self, progress):
+        # 레벨이 높으면 더 강한 적이 빨리 나타나도록 함
+        effective_progress = max(progress, (self.player.level - 1) / 30.0)
+        progress = effective_progress
+
         angle = random.uniform(0,360)
         dist  = random.uniform(420,620)
         sp    = self.player.world_pos + Vector2(math.cos(math.radians(angle)),
@@ -1127,7 +1309,6 @@ class GameManager:
         dim = random.choice(["PHYSICAL","VOID"])
         ch  = self.current_chapter
 
-        # 최종 보스
         if "mega_bosses" in ch.special:
             mega = ["void_god","abyss_sovereign"]
             for mb in mega:
@@ -1135,8 +1316,7 @@ class GameManager:
                 if progress >= bp and not any(e.etype==mb for e in self.enemies):
                     self.enemies.add(Enemy(sp, dim, mb, self.difficulty))
                     self.notify(f"★★ {ENEMY_DATA[mb]['name']} 출현! ★★", 250)
-                    self.screen_shake(20,25)
-                    return
+                    self.screen_shake(20,25); return
 
         boss_types = ["nexus_overmind","abyssal_tyrant"]
         for bt in boss_types:
@@ -1148,7 +1328,7 @@ class GameManager:
 
         mid_bosses = [("echo_wraith",0.70),("dreadnought_construct",0.50),("anomaly_core",0.25)]
         if ch.enemy_set == "abyss":
-            mid_bosses = [("abyss_leviathan",0.55),("anomaly_core",0.25)]
+            mid_bosses = [("abyss_leviathan",0.55),("abyss_hydra",0.40),("anomaly_core",0.25)]
         elif ch.enemy_set == "void":
             mid_bosses = [("null_colossus",0.60),("echo_wraith",0.40)]
         for mbt, mp in mid_bosses:
@@ -1157,8 +1337,7 @@ class GameManager:
                 self.notify(f"⚡ {ENEMY_DATA[mbt]['name']} 등장!", 160)
                 self.screen_shake(10,12); return
 
-        # 일반 적 — 챕터별 풀
-        abyss_pool = ["abyss_eel","depth_guardian","leviathan_eye","basic_drone"]
+        abyss_pool = ["abyss_eel","depth_guardian","leviathan_eye","basic_drone","deep_angler"]
         void_pool  = ["null_fragment","void_titan","echo_phantom","glitcher"]
         normal_pool = ["basic_drone","swarm_organism","glitcher","hunter_drone",
                        "sentinel","sniper_node","elite_enforcer","void_weaver",
@@ -1179,7 +1358,6 @@ class GameManager:
         elif progress > 0.5 and r < 0.22:
             etype = random.choice(pool[len(pool)//2:] or pool)
         elif r < 0.38:
-            # 군집 5마리
             sw = "swarm_organism" if ch.enemy_set not in ("abyss","void") else pool[0]
             for _ in range(5):
                 off = Vector2(random.uniform(-45,45), random.uniform(-45,45))
@@ -1234,10 +1412,8 @@ class GameManager:
         locked_w = [w for w in WEAPON_ORDER if w not in self.player.unlocked_weapons]
         locked_f = [f for f in SHIP_FORMS   if f not in self.player.unlocked_forms]
         choices  = []
-        if locked_f:
-            choices.append(("form", locked_f[0]))
-        if locked_w:
-            choices.append(("weapon", locked_w[0]))
+        if locked_f: choices.append(("form", locked_f[0]))
+        if locked_w: choices.append(("weapon", locked_w[0]))
         choices.append(("stat","cooldown"))
         choices.append(("stat","maxhp"))
         choices.append(("stat","robot"))
@@ -1254,7 +1430,7 @@ class GameManager:
             self.notify(f"무기 해금: {WEAPONS[cval]['name']}!", 150)
         elif ctype == "form":
             self.player.unlocked_forms.append(cval)
-            self.notify(f"변형 해금: {SHIP_FORMS[cval]['name']}! [F]로 변경", 160)
+            self.notify(f"변형 해금: {SHIP_FORMS[cval]['name'].split('(')[0]}! [F]로 변경", 160)
         elif ctype == "stat":
             if cval == "cooldown":
                 self.player._cd_bonus += 1
@@ -1265,37 +1441,420 @@ class GameManager:
                 self.player.max_shield += 10
                 self.notify("최대 HP +25  쉴드 +10!", 130)
             elif cval == "robot":
-                if not any(isinstance(c, RobotCompanion) for c in self.companions):
-                    self.companions.add(RobotCompanion(self.player))
-                    self.notify("로봇 동반자 소환!", 150)
+                types = ["ATTACKER", "STRIKER", "GUARD"]
+                owned_types = [c.drone_type for c in self.companions if isinstance(c, RobotCompanion)]
+                available = [t for t in types if t not in owned_types]
+                
+                if available:
+                    new_t = random.choice(available)
+                    self.companions.add(RobotCompanion(self.player, new_t))
+                    self.notify(f"드론 유닛 배치: {new_t}!", 160)
                 else:
+                    # 모든 종류의 드론이 있으면 화력 강화
                     self.player._cd_bonus += 1
-                    self.notify("사격 속도 +1!", 120)
+                    self.notify("드론 화력 네트워크 최적화 (사격 속도 +1)", 140)
         self.levelup_active = False
 
     # ─────────────────────────────────────
+    #  SHOP LOGIC
+    # ─────────────────────────────────────
+    def _handle_shop_input(self, event):
+        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS
+        upgrade_keys = list(PERSISTENT_UPGRADES.keys())
+        skill_keys   = list(ACTIVE_SKILLS.keys())
+        all_keys     = upgrade_keys + skill_keys
+        
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                self.shop_sel = (self.shop_sel - 1) % len(all_keys)
+            elif event.key == pygame.K_DOWN:
+                self.shop_sel = (self.shop_sel + 1) % len(all_keys)
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                sel_key = all_keys[self.shop_sel]
+                
+                if sel_key in PERSISTENT_UPGRADES:
+                    upg = PERSISTENT_UPGRADES[sel_key]
+                    cur_lvl = self.upgrades[sel_key]
+                    cost = upg["cost"] * (cur_lvl + 1)
+                    currency = upg.get("currency", "gold")
+                    
+                    if cur_lvl < upg["max_lvl"]:
+                        if (currency == "gold" and self.gold >= cost) or \
+                           (currency == "diamond" and self.diamonds >= cost):
+                            if currency == "gold": self.gold -= cost
+                            else: self.diamonds -= cost
+                            self.upgrades[sel_key] += 1
+                            self._apply_permanent_boost(sel_key)
+                            self._save_data()
+                            self.notify(f"업그레이드 완료: {upg['name']} Lv.{self.upgrades[sel_key]}", 120)
+                        else:
+                            self.notify(f"자원이 부족합니다! ({currency.upper()} 부족)", 100)
+                    else:
+                        self.notify("최대 레벨 도달!", 100)
+                
+                elif sel_key in ACTIVE_SKILLS:
+                    skill = ACTIVE_SKILLS[sel_key]
+                    cur_lvl = self.owned_skills.get(sel_key, 0)
+                    
+                    if cur_lvl < skill["max_lvl"]:
+                        # 레벨업 비용: 기본 비용 * (현재 레벨 + 1)
+                        cost = skill["cost"] * (cur_lvl + 1)
+                        currency = skill.get("currency", "gold")
+                        
+                        if (currency == "gold" and self.gold >= cost) or \
+                           (currency == "diamond" and self.diamonds >= cost):
+                            if currency == "gold": 
+                                self.gold -= cost
+                            else: 
+                                self.diamonds -= cost
+                                
+                            if cur_lvl == 0:
+                                self.owned_skills[sel_key] = 1
+                                if self.player:
+                                    self.player.active_skills.append(sel_key)
+                                self.notify(f"스킬 해금: {skill['name']}!", 150)
+                            else:
+                                self.owned_skills[sel_key] += 1
+                                self.notify(f"스킬 레벨업: {skill['name']} Lv.{self.owned_skills[sel_key]}", 150)
+                            
+                            self._save_data()
+                        else:
+                            self.notify(f"자원이 부족합니다! ({currency.upper()} 부족)", 100)
+                    else:
+                        self.notify("최대 레벨 도달!", 100)
+                            
+            elif event.key == pygame.K_ESCAPE:
+                self.state = "MENU"
+
+    def _apply_permanent_boost(self, key):
+        if not self.player: return
+        u = self.upgrades
+        if key == "hp_boost":
+            self.player.max_health += 10
+            self.player.health = self.player.max_health
+        elif key == "shield_boost":
+            self.player.max_shield += 5
+            self.player.shield = self.player.max_shield
+        elif key == "speed_boost":
+            self.player._speed_upg_mult = 1.0 + u.get("speed_boost", 0) * 0.03
+        elif key == "xp_bonus":
+            self.player._xp_upg_mult = 1.0 + u.get("xp_bonus", 0) * 0.05
+        elif key == "dash_cdr":
+            self.player._dash_cdr_mult = 1.0 - u.get("dash_cdr", 0) * 0.05
+        elif key == "dmg_boost":
+            self.player._dmg_upg_mult = 1.0 + u.get("dmg_boost", 0) * 0.10
+
+    def _use_skill(self, idx):
+        if not self.player or idx >= len(self.player.active_skills): return
+        skey = self.player.active_skills[idx]
+        from entities import ACTIVE_SKILLS
+        skill_data = ACTIVE_SKILLS[skey]
+        
+        if self.player.skill_cooldowns[skey] > 0:
+            cd_sec = self.player.skill_cooldowns[skey] / 60
+            self.notify(f"⚠ {skill_data['name']} 재사용 대기 중! ({cd_sec:.1f}s)", 60)
+            return
+
+        # 스킬 레벨 가져오기 (기본 1레벨)
+        lvl = self.owned_skills.get(skey, 1)
+            
+        # 스킬별 로직 (레벨에 따른 스케일링 적용)
+        if skey == "nova_blast":
+            dmg = 20 + lvl * 15
+            range_val = 300 + lvl * 20
+            self.notify(f"💥 노바 블래스트! (Lv.{lvl})", 100)
+            self.screen_shake(15 + lvl, 20)
+            self._burst(self.player.world_pos, (255,100,0), count=60 + lvl*10, speed=12 + lvl, life=40)
+            target_enemies = self.rift_enemies if self.rift_active else self.enemies
+            for e in list(target_enemies):
+                if (e.world_pos - self.player.world_pos).length() < range_val:
+                    e.take_damage(dmg)
+                    
+        elif skey == "time_warp":
+            duration = 120 + lvl * 60
+            slow_mod = max(0.1, 0.5 - lvl * 0.08)
+            self.notify(f"⏳ 타임 워프! (Lv.{lvl})", duration)
+            target_enemies = self.rift_enemies if self.rift_active else self.enemies
+            for e in target_enemies: 
+                if hasattr(e, "speed"): e.speed *= slow_mod
+                
+        elif skey == "vampirism":
+            dur = 600 + lvl * 300
+            self.notify(f"🩸 뱀파이어리즘 활성화 ({dur//60}초)!", 120)
+            self.player.skill_vamp_timer = dur
+            
+        elif skey == "shield_overload":
+            dmg_buff_time = 300 + lvl * 120
+            self.notify(f"🛡️ 쉴드 오버로드! (Lv.{lvl})", 120)
+            self.player.shield = self.player.max_shield
+            self.player.skill_dmg_timer = dmg_buff_time
+            self._burst(self.player.world_pos, (255,255,255), count=30, speed=8, life=20)
+            
+        elif skey == "gravity_surge":
+            from entities import Blackhole
+            m_pos = pygame.mouse.get_pos()
+            world_m = Vector2(m_pos) + self.camera_offset
+            bh = Blackhole(world_m)
+            # 블랙홀 강화
+            bh.max_radius += lvl * 15
+            bh.pull_range += lvl * 40
+            bh.pull_force += lvl * 0.05
+            bh.max_age += lvl * 600
+            self.blackholes.add(bh)
+            self.notify(f"🌌 {lvl}단계 중력 서지 발생!", 120)
+            
+        elif skey == "stealth_cloak":
+            dur = 300 + lvl * 120
+            self.notify(f"👤 스텔스 클로킹! ({dur//60}초)", 120)
+            self.player.skill_stealth_timer = dur
+            self.player.speed_boost = dur
+            
+        elif skey == "shadow_extraction":
+            count = 3 + lvl // 2
+            self.notify(f"🌑 그림자 추출... {count}명의 병사 소환!", 180)
+            self.screen_shake(12, 15)
+            self._burst(self.player.world_pos, (100,0,255), count=40, speed=8)
+            for _ in range(count):
+                angle = random.uniform(0,360)
+                dist = random.uniform(50, 100)
+                sp = self.player.world_pos + Vector2(math.cos(math.radians(angle))*dist, math.sin(math.radians(angle))*dist)
+                self.allies.add(ShadowSoldier(self.player, sp, random.choice(["hunter_drone","shadow_lurker","glitcher"])))
+                
+        elif skey == "getsuga_tensho":
+            dmg = 25 + lvl * 25
+            size = 24 + lvl * 4
+            self.notify(f"🌙 월아천충! (Lv.{lvl} Damage:{dmg})", 140)
+            self.screen_shake(18, 20)
+            fire_dir = self.player.get_fire_direction(self.mouse_pos)
+            proj_group = self.rift_projectiles if self.rift_active else self.projectiles
+            col = (0,0,0) if (not self.rift_active and self.dimension=="PHYSICAL") else (255,0,0)
+            proj_group.add(Projectile(self.player.world_pos, fire_dir, "PHYSICAL" if self.rift_active else self.dimension,
+                                             color_override=col, speed=12 + lvl, dmg=dmg, is_direction=True, size=size))
+                                             
+        elif skey == "infinite_void":
+            dur = 300 + lvl * 120
+            dmg = 10 + lvl * 10
+            self.notify(f"🤞 무량공처 (Lv.{lvl})", dur)
+            self.freeze_timer = dur
+            self.screen_shake(30, 40)
+            for _ in range(5 + lvl):
+                rx = random.randint(-400, 400); ry = random.randint(-300, 300)
+                self._burst(self.player.world_pos + Vector2(rx, ry), (255,255,255), count=20, speed=10)
+            target_enemies = self.rift_enemies if self.rift_active else self.enemies
+            for e in target_enemies:
+                if (e.world_pos - self.player.world_pos).length() < 1000:
+                    e.take_damage(dmg)
+                    
+        elif skey == "titan_form":
+            dur = 420 + lvl * 120
+            self.notify(f"🔥 진격의 거인! ({dur//60}초)", 240)
+            self.player.skill_titan_timer = dur
+            self.screen_shake(20, 30)
+            self._burst(self.player.world_pos, (200, 200, 200), count=100, speed=15)
+            
+        elif skey == "thunder_spear":
+            dmg = 60 + lvl * 40
+            self.notify(f"💥 뇌창! (Lv.{lvl} Damage:{dmg})", 100)
+            fire_dir = self.player.get_fire_direction(self.mouse_pos)
+            proj_group = self.rift_projectiles if self.rift_active else self.projectiles
+            p = Projectile(self.player.world_pos, fire_dir, "PHYSICAL" if self.rift_active else self.dimension,
+                                             color_override=(255,180,0), speed=18, dmg=dmg, is_direction=True, size=20 + lvl*2)
+            p.special = "thunder_spear" # 특별 관리
+            proj_group.add(p)
+                                             
+        elif skey == "amaterasu":
+            dmg = 100 + lvl * 150
+            self.notify(f"👁️ 아마테라스! (Lv.{lvl})", 180)
+            m_pos = Vector2(pygame.mouse.get_pos()) + self.camera_offset
+            self._burst(m_pos, (0,0,0), count=50 + lvl*10, speed=5)
+            target_enemies = self.rift_enemies if self.rift_active else self.enemies
+            for e in target_enemies:
+                if (e.world_pos - m_pos).length() < 150 + lvl * 20:
+                    e.take_damage(dmg)
+            
+        # 스킬 사용 후 쿨타임 적용
+        self.player.skill_cooldowns[skey] = skill_data["cd"]
+
+    def _handle_menu_input(self, events):
+        mx, my = pygame.mouse.get_pos()
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_t and not self.reward_roulette_active:
+                    import time
+                    now = time.time()
+                    wait = int(600 - (now - self.last_roulette_time))
+                    if wait <= 0:
+                        self.reward_roulette_active = True
+                        self.reward_roulette_timer  = 0
+                        self.reward_roulette_result = None
+                    else:
+                        self.notify(f"룰렛 충전 중... ({wait//60}분 {wait%60}초 남음)", 100)
+                elif event.key == pygame.K_s:
+                    self.state = "SHOP"
+                elif pygame.K_1 <= event.key <= pygame.K_6:
+                    cid = str(event.key - pygame.K_0)
+                    self.start_game(cid)
+            
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # 리워드 룰렛 버튼
+                import time
+                now = time.time()
+                wait = int(600 - (now - self.last_roulette_time))
+                
+                reward_btn = pygame.Rect(310, 485, 180, 32)
+                if reward_btn.collidepoint(mx, my) and not self.reward_roulette_active:
+                    if wait <= 0:
+                        self.reward_roulette_active = True
+                        self.reward_roulette_timer = 0
+                    else:
+                        self.notify(f"룰렛 충전 중... ({wait//60}분 {wait%60}초 남음)", 100)
+                    return
+
+
+                # 챕터 시작 버튼 제거 (룰렛용)
+
+
+                # 챕터 카드 직접 클릭
+                cols = 2; card_w, card_h = 340, 88
+                x_start, y_start, x_gap, y_gap = 60, 158, 360, 108
+                for i, cid in enumerate(["1","2","3","4","5","6"]):
+                    row = i // cols; ci = i % cols
+                    card = pygame.Rect(x_start + ci * x_gap, y_start + row * y_gap, card_w, card_h)
+                    if card.collidepoint(mx, my):
+                        self.start_game(cid)
+                        return
+
+                # 상점 버튼
+                shop_btn = pygame.Rect(630, 562, 160, 32)
+                if shop_btn.collidepoint(mx, my):
+                    self.state = "SHOP"
+                    return
+
+    def _apply_reward_roulette_result(self):
+        pool = ["GOLD_1000", "SKILL_nova_blast", "GOLD_2000", "SKILL_time_warp", "GOLD_500", "SKILL_vampirism", "GOLD_5000", "GOLD_500"]
+        res  = pool[self.reward_roulette_idx]
+        from entities import ACTIVE_SKILLS
+        
+        if res.startswith("SKILL_"):
+            skey = res.replace("SKILL_", "")
+            lvl = self.owned_skills.get(skey, 0)
+            if lvl >= 1:
+                # 이미 보유한 스킬이면 레벨업 (최대 레벨 미만일 때)
+                if lvl < ACTIVE_SKILLS.get(skey, {}).get("max_lvl", 5):
+                    self.owned_skills[skey] += 1
+                    sname = ACTIVE_SKILLS[skey]["name"]
+                    self.reward_roulette_result = f"UPGRADE: {sname}"
+                    self.notify(f"행운! {sname} 레벨업! (Lv.{self.owned_skills[skey]})", 180)
+                else:
+                    self.gold += 5000
+                    self.reward_roulette_result = "5000G (MAX)"
+                    self.notify("이미 최대 레벨! 지원금 +5000 G", 150)
+            else:
+                self.owned_skills[skey] = 1
+                sname = ACTIVE_SKILLS.get(skey, {"name": skey})["name"]
+                self.reward_roulette_result = f"SKILL: {sname}"
+                self.notify(f"대박! 신규 스킬 [{sname}] 획득!", 240)
+        else:
+            amt = int(res.split("_")[1])
+            self.gold += amt
+            self.reward_roulette_result = f"{amt}G"
+            self.notify(f"룰렛 보상: {amt} GOLD 획득!", 150)
+        
+        import time
+        self.last_roulette_time = time.time()
+        self._save_data()
+
+    def _handle_shop_mouse(self, event):
+        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS
+        upgrade_keys = list(PERSISTENT_UPGRADES.keys())
+        skill_keys   = list(ACTIVE_SKILLS.keys())
+        all_keys     = upgrade_keys + skill_keys
+        
+        if event.type == pygame.MOUSEWHEEL:
+            self.shop_scroll_y += event.y * 35
+            rows = (len(all_keys) + 1) // 2
+            max_scroll = -max(0, rows * 75 - 380)
+            self.shop_scroll_y = min(0, max(max_scroll, self.shop_scroll_y))
+            return
+
+        mx, my = pygame.mouse.get_pos()
+        cols = 2; cw, ch = 320, 65
+        x_start, y_start, x_gap, y_gap = 70, 160 + self.shop_scroll_y, 340, 75
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i, ukey in enumerate(all_keys):
+                row = i // cols; ci = i % cols
+                card = pygame.Rect(x_start + ci * x_gap, y_start + row * y_gap, cw, ch)
+                
+                # 헤더 영역(y < 145)은 클릭 무시
+                if my < 145: continue
+                
+                if card.collidepoint(mx, my):
+                    self.shop_sel = i
+                    # 클릭하면 바로 구매 시도
+                    fake_event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)
+                    self._handle_shop_input(fake_event)
+                    break
+        
+            back_btn = pygame.Rect(320, 555, 160, 36)
+            if back_btn.collidepoint(mx, my):
+                self.state = "MENU"
+
+    # ─────────────────────────────────────
+    #  DEATH REWARDS
+    # ─────────────────────────────────────
+    def _grant_death_rewards(self):
+        # 보상 계산 (기존보다 상향된 계수 적용)
+        gold_from_score = int(self.player.score * 0.1) # 1000점당 100골드
+        gold_from_kills = self.player.kill_count * 5    # 처치당 5골드
+        gold_from_time  = int(self.game_time // 10)     # 1초당 6골드 (프레임 60fps 기준)
+        
+        total_gold = gold_from_score + gold_from_kills + gold_from_time
+        
+        # 다이아몬드: 보스 처치 수와 스코어 비례
+        dia = min(100, (self.player.score // 10000) + (self.player.kill_count // 50))
+        
+        self.last_death_rewards = {
+            "gold": total_gold,
+            "dia":  dia,
+            "score": self.player.score,
+            "time":  f"{int(self.game_time//3600):02d}:{int((self.game_time%3600)//60):02d}", # 초 단위 보정 필요시 수정
+            "kills": self.player.kill_count
+        }
+        self.gold     += total_gold
+        self.diamonds += dia
+        self._save_data()
+
+    # ─────────────────────────────────────
     #  DRAW
+
     # ─────────────────────────────────────
     def draw(self):
         shake = Vector2(0,0)
         if self.shake_timer > 0:
             shake = Vector2(random.uniform(-self.shake_amount, self.shake_amount),
                             random.uniform(-self.shake_amount, self.shake_amount))
-        if self.state   == "MENU":
+        
+        if self.state == "MENU":
             self._draw_menu()
-            if self.settings_open:
-                self._draw_settings()
         elif self.state == "COLOR_SELECT": self._draw_color_select()
+        elif self.state == "SHOP":         self._draw_shop()
         elif self.state == "PLAYING":
             if self.rift_active:
                 self._draw_rift(shake)
             else:
                 self._draw_playing(shake)
-            # 설정 창 (PLAYING 위에 오버레이)
-            if self.settings_open:
-                self._draw_settings()
         elif self.state == "DEATH":   self._draw_death()
         elif self.state == "WIN":     self._draw_win()
+
+        # 후처리 효과: 스캔라인 오퍼시티 대폭 축소 (글자 깨짐 방지)
+        # self.screen.blit(self.scanline_surf, (0,0)) 
+        # 대신 아주 연한 상단 레이어만 적용하거나 제거
+        pass
+        
+        if self.settings_open:
+            self._draw_settings()
+            
         pygame.display.flip()
 
     # ─────────────────────────────────────
@@ -1306,12 +1865,23 @@ class GameManager:
             x=rng.randint(0,800); y=rng.randint(0,600); b=rng.randint(40,160)
             pygame.draw.circle(self.screen, (b,b,b+40), (x,y), 1)
 
-        self.draw_text("ECHOES OF THE CONTINUUM", (400,48), 42, (0,220,255))
-        self.draw_text("Infinite Dimension Survival", (400,92), 20, (80,180,255))
-        self.draw_text("마우스 클릭 또는 숫자키 [1~6] 선택", (400,118), 16, (110,110,150))
+        # ★ 아티스틱 타이틀 레이아웃 (중앙 정렬)
+        title_x = 400
+        for offset in range(4, 0, -1):
+            self.draw_text("DIMENSION FIGHT", (title_x + offset, 58 + offset), 58, (60, 20, 10))
+        
+        self.draw_text("DIMENSION FIGHT", (title_x, 58), 58, (255, 245, 230))
+        # 호박색(Amber) 테마로 변경
+        self.draw_text("DIMENSION FIGHT", (title_x, 58), 58, (255, 150, 0))
+        self.draw_text("Neon Chronicles — Paradox Survival", (title_x, 108), 24, (255, 100, 50))
+        
+        # 중앙 수평 구분선
+        pygame.draw.line(self.screen, (100, 40, 20), (40, 135), (760, 135), 1)
+
+        self.draw_text("PROTOCOL SELECTION PHASE", (400, 148), 12, (255, 180, 100))
+
 
         mx, my = pygame.mouse.get_pos()
-        # ── 챕터 카드: 2열 3행 ──
         cols = 2
         card_w, card_h = 340, 88
         x_start = 60; y_start = 158; x_gap = 360; y_gap = 108
@@ -1323,12 +1893,10 @@ class GameManager:
             card = pygame.Rect(x_start + ci * x_gap, y_start + row * y_gap, card_w, card_h)
             hovered = card.collidepoint(mx,my)
 
-            # 룰렛 강조
             is_roulette_hi = self.roulette_active and (self.roulette_idx == i)
             is_result      = (self.roulette_result == cid and self.roulette_flash > 0)
 
             if is_result:
-                flash_t = self.roulette_flash / 150
                 pulse   = int(40 + 40 * math.sin(self.roulette_flash * 0.25))
                 bg_col  = (pulse, pulse//2, 0)
                 bc      = (255, 220, 50)
@@ -1348,7 +1916,6 @@ class GameManager:
             pygame.draw.rect(self.screen, bg_col, card, border_radius=10)
             pygame.draw.rect(self.screen, bc, card, bw_line, border_radius=10)
 
-            # 결과 카드에 별 반짝임
             if is_result:
                 for si in range(6):
                     sa = (self.game_time * 4 + si * 60) % 360
@@ -1360,113 +1927,62 @@ class GameManager:
             name_col = (255,220,50) if is_result else mode_col
             self.draw_text(f"[{cid}] {ch.name}", (cx, cy - 22), 21, name_col)
             self.draw_text(ch.mode, (cx, cy + 1), 14, (150,150,180))
-            ov = ch.overview[:36]
-            self.draw_text(ov, (cx, cy + 22), 12, (130,130,160))
+            # 카드 하단 설명 (브리핑 느낌)
+            ov = ch.overview[:42]
+            self.draw_text(f"BRIEFING: {ov}", (cx, cy + 18), 11, (130, 130, 160))
+            
+            # 위험 점수 표시 (별) - 아래로 배치
+            danger = i + 1
+            star_str = "★" * danger + "☆" * (6 - danger)
+            self.draw_text(star_str, (cx, cy + 32), 12, (255, 100, 50))
 
-        # ── 룰렛 버튼 & 결과 영역 ──────────────────────
-        self._draw_roulette_section(mx, my)
+        # 리워드 룰렛 UI
+        self._draw_reward_roulette(mx, my)
 
         if self.high_score > 0:
-            self.draw_text(f"최고 점수: {self.high_score:,}", (400,578), 18, (255,220,80))
-        self.draw_text("WASD이동  SPACE대쉬  SHIFT차원전환  F변형  Q/E무기전환", (400,557), 13, (70,70,110))
+            self.draw_text(f"최고 점수: {self.high_score:,}", (400, 580), 18, (255, 220, 80))
+        self.draw_text("WASD이동  SPACE대쉬  SHIFT차원전환  F변형  Q/E무기  [1~3]스킬  [S]상점", (400, 555), 13, (100, 100, 150))
 
-    def _draw_roulette_section(self, mx, my):
-        """룰렛 버튼 + 슬롯머신 스타일 표시줄"""
-        # ── 슬롯 표시줄 (6칸 가로 나열) ─────────────────
-        slot_y    = 494
-        slot_w    = 88
-        slot_h    = 36
-        slot_gap  = 6
-        total_w   = 6 * slot_w + 5 * slot_gap
-        slot_x0   = (800 - total_w) // 2
-
-        chapter_list = list(self.chapters.items())
-
-        for i, (cid, ch) in enumerate(chapter_list):
-            sx = slot_x0 + i * (slot_w + slot_gap)
-            slot_rect = pygame.Rect(sx, slot_y, slot_w, slot_h)
-
-            is_hi     = self.roulette_active and (self.roulette_idx == i)
-            is_result = (self.roulette_result == cid and self.roulette_flash > 0)
-
-            if is_result:
-                pulse = int(60 + 40 * math.sin(self.roulette_flash * 0.3))
-                bg  = (pulse, pulse//2, 0)
-                bc  = (255, 220, 50)
-                bw  = 3
-                tc  = (255, 255, 100)
-            elif is_hi:
-                bg  = (60, 50, 0)
-                bc  = (255, 200, 0)
-                bw  = 3
-                tc  = (255, 220, 80)
-            else:
-                bg  = (20, 20, 35)
-                bc  = (60, 60, 100)
-                bw  = 1
-                tc  = (100, 120, 160)
-
-            pygame.draw.rect(self.screen, bg,  slot_rect, border_radius=6)
-            pygame.draw.rect(self.screen, bc,  slot_rect, bw, border_radius=6)
-            self.draw_text(f"{cid}", (sx + slot_w//2, slot_y + 10), 14, tc)
-            self.draw_text(ch.name[:7], (sx + slot_w//2, slot_y + 26), 10, tc)
-
-        # 선택 화살표 (현재 강조 위)
-        if self.roulette_active:
-            hi_x = slot_x0 + self.roulette_idx * (slot_w + slot_gap) + slot_w // 2
-            arrow_pts = [(hi_x, slot_y - 4), (hi_x - 8, slot_y - 16), (hi_x + 8, slot_y - 16)]
-            pygame.draw.polygon(self.screen, (255, 200, 0), arrow_pts)
-        elif self.roulette_result:
-            ri = int(self.roulette_result) - 1
-            hi_x = slot_x0 + ri * (slot_w + slot_gap) + slot_w // 2
-            col = (255, 220, 50) if self.roulette_flash > 0 else (120, 120, 60)
-            arrow_pts = [(hi_x, slot_y - 4), (hi_x - 8, slot_y - 16), (hi_x + 8, slot_y - 16)]
-            pygame.draw.polygon(self.screen, col, arrow_pts)
-
-        # ── 룰렛 버튼 ────────────────────────────────────
-        btn_rect = pygame.Rect(310, 536, 180, 36)
-        btn_hov  = btn_rect.collidepoint(mx, my)
-        if self.roulette_active:
-            btn_col = (60, 60, 80); btn_bc = (80,80,100); btn_tc = (100,100,130)
-            btn_txt = "돌아가는 중..."
-        elif btn_hov:
-            btn_col = (40, 30, 0); btn_bc = (255,200,0); btn_tc = (255,220,80)
-            btn_txt = "🎰 ROULETTE [R]"
+    def _draw_reward_roulette(self, mx, my):
+        pool = ["1000G", "NOVA", "2000G", "TIME", "500G", "VAMP", "5000G", "500G"]
+        rx, ry = 310, 485; rw, rh = 180, 32
+        rect = pygame.Rect(rx, ry, rw, rh)
+        hov = rect.collidepoint(mx, my)
+        
+        import time
+        now = time.time()
+        wait = int(600 - (now - self.last_roulette_time))
+        
+        if self.reward_roulette_active:
+            bg = (60, 0, 80); tc = (255, 230, 255); bc = (230, 80, 255)
+            text = f"🎰 {pool[self.reward_roulette_idx]}"
         else:
-            btn_col = (20, 15, 0); btn_bc = (140,100,0); btn_tc = (200,160,50)
-            btn_txt = "🎰 ROULETTE [R]"
-        pygame.draw.rect(self.screen, btn_col, btn_rect, border_radius=8)
-        pygame.draw.rect(self.screen, btn_bc,  btn_rect, 2, border_radius=8)
-        self.draw_text(btn_txt, (400, 554), 16, btn_tc)
+            if wait > 0:
+                text = f"충전중: {wait//60:02d}:{wait%60:02d}"
+                bg = (20, 20, 20); bc = (80, 80, 80); tc = (120, 120, 120)
+            else:
+                text = "REWARD ROULETTE [T]"
+                bg = (30, 0, 40) if hov else (15, 0, 25)
+                bc = (230, 80, 255) if hov else (120, 40, 180)
+                tc = (255, 230, 255)
+            
+            if self.reward_roulette_flash > 0:
+                text = f"WIN: {self.reward_roulette_result}"
+                self.reward_roulette_flash -= 1
 
-        # ── 결과 출력 + 바로 시작 버튼 ───────────────────
-        if self.roulette_result and self.roulette_flash > 0:
-            rid  = self.roulette_result
-            rch  = self.chapters[rid]
-            # 결과 텍스트
-            self.draw_text(
-                f"★  챕터 {rid}: {rch.name}  ★",
-                (400, 476), 20, (255, 230, 60))
-            # 바로 시작 버튼
-            go_rect = pygame.Rect(270, 576, 260, 34)
-            go_hov  = go_rect.collidepoint(mx, my)
-            go_bg   = (0, 60, 20) if go_hov else (0, 30, 10)
-            go_bc   = (0, 255, 100) if go_hov else (0, 150, 60)
-            pygame.draw.rect(self.screen, go_bg,  go_rect, border_radius=8)
-            pygame.draw.rect(self.screen, go_bc,  go_rect, 2, border_radius=8)
-            self.draw_text(f"▶  챕터 {rid} 바로 시작!", (400, 593), 16,
-                           (0,255,100) if go_hov else (0,200,80))
+        pygame.draw.rect(self.screen, bg, rect, border_radius=8)
+        pygame.draw.rect(self.screen, bc, rect, 2, border_radius=8)
+        self.draw_text(text, (rx + rw//2, ry + rh//2), 14, tc)
+        
+        # 메뉴 클릭 이벤트 보정 (main.py에서 직접 처리하므로 여기는 draw만)
 
     # ─────────────────────────────────────
     def _draw_color_select(self):
-        """우주선 색상 선택 화면"""
         self.screen.fill((6,6,16))
-        # 배경 별
         rng = random.Random(99)
         for _ in range(120):
             x=rng.randint(0,800); y=rng.randint(0,600); b=rng.randint(30,130)
             pygame.draw.circle(self.screen, (b,b,b+50), (x,y), 1)
-
         self.draw_text("우주선 색상 선택", (400,60), 38, (0,220,255))
         ch_name = self.chapters.get(self.pending_chapter_id, list(self.chapters.values())[0]).name
         self.draw_text(f"챕터: {ch_name}", (400,100), 20, (100,180,255))
@@ -1479,34 +1995,21 @@ class GameManager:
 
         for i, cd in enumerate(SHIP_COLORS):
             row = i // cols; ci = i % cols
-            bx = x_start + ci * x_gap
-            by = y_start + row * y_gap
+            bx = x_start + ci * x_gap; by = y_start + row * y_gap
             card = pygame.Rect(bx, by, card_w, card_h)
             sel  = (i == self.color_select_idx)
             hov  = card.collidepoint(mx, my)
-
             bg  = (40,30,65) if sel else ((28,28,48) if hov else (16,16,32))
             bc  = (255,230,50) if sel else ((150,150,200) if hov else (60,60,100))
             pygame.draw.rect(self.screen, bg, card, border_radius=10)
             pygame.draw.rect(self.screen, bc, card, 2 if sel else 1, border_radius=10)
-
-            # 우주선 미리보기 (삼각형 폴리곤)
-            cx_c = bx + card_w // 2
-            cy_c = by + 52
-            scale = 16
-            poly = [(cx_c, cy_c - scale),
-                    (cx_c + scale, cy_c + scale),
-                    (cx_c - scale, cy_c + scale)]
-            col_p = cd["color_p"]
-            col_v = cd["color_v"]
+            cx_c = bx + card_w // 2; cy_c = by + 52; scale = 16
+            poly = [(cx_c, cy_c - scale),(cx_c + scale, cy_c + scale),(cx_c - scale, cy_c + scale)]
+            col_p = cd["color_p"]; col_v = cd["color_v"]
             pygame.draw.polygon(self.screen, col_p, poly)
             pygame.draw.polygon(self.screen, (255,255,255), poly, 1)
-            # VOID 색상 작게 옆에
-            poly_v = [(cx_c+26, cy_c - 8),
-                      (cx_c+38, cy_c + 8),
-                      (cx_c+14, cy_c + 8)]
+            poly_v = [(cx_c+26, cy_c - 8),(cx_c+38, cy_c + 8),(cx_c+14, cy_c + 8)]
             pygame.draw.polygon(self.screen, col_v, poly_v)
-
             self.draw_text(cd["name"], (cx_c, by + card_h - 24), 15,
                            (255,230,50) if sel else (180,180,220))
             self.draw_text("P" , (cx_c - 8, by + card_h - 8), 11, col_p)
@@ -1514,10 +2017,8 @@ class GameManager:
             if sel:
                 pygame.draw.rect(self.screen, (255,230,50), card, 3, border_radius=10)
 
-        # 선택된 색상 미리보기 (크게)
         sel_cd = SHIP_COLORS[self.color_select_idx]
-        preview_x, preview_y = 400, 555
-        big_scale = 28
+        preview_x, preview_y = 400, 555; big_scale = 28
         big_poly = [(preview_x, preview_y - big_scale),
                     (preview_x + big_scale, preview_y + big_scale),
                     (preview_x - big_scale, preview_y + big_scale)]
@@ -1527,17 +2028,11 @@ class GameManager:
 
     # ─────────────────────────────────────
     def _draw_rift(self, shake):
-        """제3차원 전투 화면"""
-        # ── 독특한 배경: 진보라+자줏빛 ──
         pulse = int(20 + 15 * math.sin(self.rift_timer * 0.04))
         self.screen.fill((10, 0, pulse + 8))
-
-        # 제3차원 격자 배경
         cam = self.camera_offset + shake
-        grid_col = (40, 0, 80)
-        grid_spacing = 80
-        offset_x = int(-cam.x % grid_spacing)
-        offset_y = int(-cam.y % grid_spacing)
+        grid_col = (40, 0, 80); grid_spacing = 80
+        offset_x = int(-cam.x % grid_spacing); offset_y = int(-cam.y % grid_spacing)
         for gx in range(-1, self.SW // grid_spacing + 2):
             lx = offset_x + gx * grid_spacing
             pygame.draw.line(self.screen, grid_col, (lx, 0), (lx, self.SH), 1)
@@ -1545,12 +2040,9 @@ class GameManager:
             ly = offset_y + gy * grid_spacing
             pygame.draw.line(self.screen, grid_col, (0, ly), (self.SW, ly), 1)
 
-        # 중심 포탈 링 (탈출구 — 보스 처치 후 빛남)
         pcx = int(0 - cam.x); pcy = int(-200 - cam.y)
         for ri, (r, alpha, col) in enumerate([
-            (80, 40, (100, 0, 200)),
-            (55, 80, (160, 0, 255)),
-            (30, 150, (220, 100, 255)),
+            (80, 40, (100, 0, 200)), (55, 80, (160, 0, 255)), (30, 150, (220, 100, 255)),
         ]):
             try:
                 s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
@@ -1559,14 +2051,11 @@ class GameManager:
             except Exception:
                 pass
 
-        # 별 (보라톤)
         rng2 = random.Random(77)
         for _ in range(80):
-            sx = rng2.randint(0,800); sy = rng2.randint(0,600)
-            b  = rng2.randint(40,130)
+            sx = rng2.randint(0,800); sy = rng2.randint(0,600); b  = rng2.randint(40,130)
             pygame.draw.circle(self.screen, (b//2, 0, b), (sx, sy), 1)
 
-        # 적 렌더링
         for enemy in self.rift_enemies:
             enemy.update_screen_pos(cam)
             bx = enemy.rect.left; by_e = enemy.rect.top-8; bw = enemy.rect.width
@@ -1580,7 +2069,6 @@ class GameManager:
                     self.screen.blit(t, (bx, by_e - 14))
             self.screen.blit(enemy.image, enemy.rect)
 
-        # 탄환
         for p in self.rift_projectiles:
             p.update_screen_pos(cam)
             self.screen.blit(p.image, p.rect)
@@ -1588,23 +2076,22 @@ class GameManager:
             ep.update_screen_pos(cam)
             self.screen.blit(ep.image, ep.rect)
 
-        # 플레이어
+        for ally in self.allies:
+            ally.update_screen_pos(cam)
+            self.screen.blit(ally.image, ally.rect)
+
         self.screen.blit(self.player.image, self.player.rect)
 
-        # 파티클
         for particle in self.rift_particles:
             particle.draw(self.screen, cam)
 
-        # 조준 커서
         mx, my = self.mouse_pos
         pygame.draw.circle(self.screen, (200,80,255), (mx,my), 7, 1)
         pygame.draw.line(self.screen, (200,80,255), (mx-12,my),(mx+12,my), 1)
         pygame.draw.line(self.screen, (200,80,255), (mx,my-12),(mx,my+12), 1)
 
-        # HUD (제3차원용)
         self._draw_rift_hud()
 
-        # 화이트/보라 플래시 오버레이
         if self.bh_flash_timer > 0:
             alpha = int(255 * self.bh_flash_timer / 40)
             try:
@@ -1618,7 +2105,6 @@ class GameManager:
             self.draw_text(self.notify_text, (400,568), 20, (255,200,255))
 
     def _draw_rift_hud(self):
-        # HP 바
         hp_ratio = max(0, self.player.health/self.player.max_health)
         hw = 170
         pygame.draw.rect(self.screen,(50,8,8),(10,26,hw,15),border_radius=4)
@@ -1627,7 +2113,6 @@ class GameManager:
         pygame.draw.rect(self.screen,(100,100,130),(10,26,hw,15),1,border_radius=4)
         self.draw_text(f"HP {self.player.health}/{self.player.max_health}",(10+hw//2,33),14)
 
-        # 보스 HP 바 (상단 중앙 크게)
         if self.rift_boss and self.rift_boss.alive():
             bw = 400
             bh_ratio = max(0, self.rift_boss.hp / self.rift_boss.max_hp)
@@ -1642,7 +2127,6 @@ class GameManager:
                 f"{self.rift_boss.name}  {self.rift_boss.hp}/{self.rift_boss.max_hp}{scale_txt}",
                 (400,17),15,(255,180,255))
 
-        # 제3차원 표시 + 처치 횟수
         self.draw_text("⚡ 제3차원 ⚡", (660,18), 17, (200,80,255))
         kill_col = (255,150,255) if self.rift_boss_kill_count > 0 else (150,80,180)
         self.draw_text(f"처치:{self.rift_boss_kill_count}회", (660,38), 14, kill_col)
@@ -1655,11 +2139,16 @@ class GameManager:
         bg        = self.current_chapter.get_bg(progress,
                                                  void=(self.dimension=="VOID"),
                                                  abyss=self.abyss_active)
+
+        # ★ 잠수 중 배경 어두워짐
+        if self.player.dive_active:
+            d = self.player.dive_depth / self.player.dive_max
+            bg = tuple(max(0, int(c * (1 - d * 0.7))) for c in bg)
+
         self.screen.fill(bg)
         self.star_field.draw(self.screen, self.camera_offset,
                               self.dimension, abyss=self.abyss_active)
 
-        # 심해 차원 오버레이 (반투명 파란 파동)
         if self.abyss_active:
             pulse = int(30 + 20 * math.sin(self.game_time * 0.05))
             try:
@@ -1669,22 +2158,59 @@ class GameManager:
             except Exception:
                 pass
 
-        # ── 블랙홀 흡입 트랜지션 이펙트 ──
+        # ★ 잠수 중 압력 파동 이펙트
+        if self.player.dive_active and self.player.dive_depth > 20:
+            d_ratio = self.player.dive_depth / self.player.dive_max
+            wave_r = int(40 + 80 * ((self.game_time % 60) / 60))
+            wave_alpha = int(80 * d_ratio * (1 - (self.game_time % 60) / 60))
+            try:
+                ws = pygame.Surface((wave_r*2+4, wave_r*2+4), pygame.SRCALPHA)
+                pygame.draw.circle(ws, (0, 180, 255, wave_alpha), (wave_r+2, wave_r+2), wave_r, 2)
+                self.screen.blit(ws, (400-wave_r-2, 300-wave_r-2))
+            except Exception:
+                pass
+            # 잠수 깊이 비네트
+            try:
+                vw = pygame.Surface((800,600), pygame.SRCALPHA)
+                edge_alpha = int(d_ratio * 100)
+                vw.fill((0, 0, int(80*d_ratio), edge_alpha))
+                self.screen.blit(vw, (0,0))
+            except Exception:
+                pass
+
+        # ★ 연속킬 streak 화면 플래시
+        if self.streak_flash_timer > 0:
+            t = self.streak_flash_timer / 45
+            try:
+                sf = pygame.Surface((800,600), pygame.SRCALPHA)
+                sf.fill((255, 200, 0, int(t * 60)))
+                self.screen.blit(sf, (0,0))
+            except Exception:
+                pass
+
+        # ★ 과부하 화면 오버레이
+        if self.player.overload_timer > 0:
+            ol_t = self.player.overload_timer / 300
+            pulse2 = int(20 * abs(math.sin(self.game_time * 0.2)))
+            try:
+                ov2 = pygame.Surface((800,600), pygame.SRCALPHA)
+                ov2.fill((255, 80, 0, int(ol_t * 30 + pulse2)))
+                self.screen.blit(ov2, (0,0))
+            except Exception:
+                pass
+
         if self.bh_suck_timer > 0:
-            t = self.bh_suck_timer / 60.0  # 1→0
-            # 화면 가장자리 점점 어두워지는 비네트
+            t = self.bh_suck_timer / 60.0
             try:
                 vignette = pygame.Surface((800,600), pygame.SRCALPHA)
                 vignette.fill((0,0,0,0))
                 edge_alpha = int((1-t) * 220)
                 pygame.draw.rect(vignette, (0,0,0,edge_alpha), (0,0,800,600))
-                # 중앙 구멍 (원형 마스크)
                 hole_r = int(t * 320)
                 pygame.draw.circle(vignette, (0,0,0,0), (400,300), hole_r)
                 self.screen.blit(vignette, (0,0))
             except Exception:
                 pass
-            # 소용돌이 링들
             bh = self.bh_suck_target
             if bh:
                 bcx = int(bh.world_pos.x - self.camera_offset.x)
@@ -1704,13 +2230,11 @@ class GameManager:
                         self.screen.blit(s, (bcx-r-2, bcy-r-2))
                     except Exception:
                         pass
-            # 텍스트
             alpha_t = int((1-t) * 255)
             msg_surf = self._get_font(26).render("블랙홀에 흡입됨...", True, (200, 80, 255))
             msg_surf.set_alpha(alpha_t)
             self.screen.blit(msg_surf, msg_surf.get_rect(center=(400, 300)))
 
-        # 화이트/보라 플래시 (제3차원 진입/탈출 시)
         if self.bh_flash_timer > 0:
             alpha = int(255 * self.bh_flash_timer / 40)
             try:
@@ -1730,14 +2254,12 @@ class GameManager:
         for item in self.items:
             item.update_screen_pos(cam)
             if item.age > 480 and (item.age//8)%2==0: continue
-            # ship_form 아이템 빛남
             self.screen.blit(item.image, item.rect)
 
         for gem in self.gems:
             gem.update_screen_pos(cam)
             self.screen.blit(gem.image, gem.rect)
 
-        # 블랙홀
         for bh in self.blackholes:
             bh.draw(self.screen, cam, self.game_time)
 
@@ -1755,9 +2277,20 @@ class GameManager:
                         f = self._get_font(13); t = f.render(enemy.name, True, (255,230,100))
                         self.screen.blit(t, (bx, by-14))
                 self.screen.blit(enemy.image, enemy.rect)
+                
+                # ★ 피격 플래시 효과
+                if enemy.flash_timer > 0:
+                    enemy.flash_timer -= 1
+                    flash_surf = pygame.Surface(enemy.image.get_size(), pygame.SRCALPHA)
+                    flash_surf.fill((255, 255, 255, 180)) # 반투명 흰색
+                    self.screen.blit(flash_surf, enemy.rect, special_flags=pygame.BLEND_RGBA_ADD)
 
         for p in self.projectiles:
             p.update_screen_pos(cam)
+            # ★ 탄환 잔상 효과 (속도감)
+            prev_x = int(p.world_pos.x - p.vel.x - cam.x)
+            prev_y = int(p.world_pos.y - p.vel.y - cam.y)
+            pygame.draw.line(self.screen, (255, 255, 255, 80), (prev_x, prev_y), p.rect.center, 2)
             self.screen.blit(p.image, p.rect)
 
         for ep in self.enemy_projectiles:
@@ -1768,14 +2301,17 @@ class GameManager:
         for comp in self.companions:
             self.screen.blit(comp.image, comp.rect)
 
+        for ally in self.allies:
+            self.screen.blit(ally.image, ally.rect)
+
         self.screen.blit(self.player.image, self.player.rect)
 
         for particle in self.particles:
             particle.draw(self.screen, cam)
 
-        # 조준 커서
         mx,my = self.mouse_pos
         col_c = (0,220,255) if self.abyss_active else (255,255,100)
+        if self.player.overload_timer > 0: col_c = (255,120,0)
         pygame.draw.circle(self.screen, col_c, (mx,my), 7, 1)
         pygame.draw.line(self.screen, col_c, (mx-12,my),(mx+12,my), 1)
         pygame.draw.line(self.screen, col_c, (mx,my-12),(mx,my+12), 1)
@@ -1785,6 +2321,10 @@ class GameManager:
 
         if self.abyss_active:
             self._draw_abyss_bar()
+
+        # ★ 심해 잠수 UI (diving 챕터 전용)
+        if "diving" in self.current_chapter.special:
+            self._draw_dive_ui()
 
         if self.form_select_active:
             self._draw_form_select()
@@ -1806,8 +2346,54 @@ class GameManager:
             c = int(min(255, 80+self.player.combo*7))
             self.draw_text(f"COMBO ×{self.player.combo}  ×{mult:.1f}", (660,80), 22, (255,c,50))
 
+        # ★ 연속킬 streak 텍스트
+        if self.streak_flash_timer > 0:
+            t = self.streak_flash_timer / 45
+            size = int(28 + 14 * t)
+            col_s = (255, int(200*t), 0)
+            self.draw_text(f"🔥 {self.streak_flash_count} KILL STREAK!", (400, 260), size, col_s)
+
+        # ★ 과부하 타이머 표시
+        if self.player.overload_timer > 0:
+            ot = self.player.overload_timer
+            self.draw_text(f"⚡ OVERLOAD {ot//60}.{(ot%60)//6}s", (400, 80), 24, (255,150,0))
+
+    # ─────────────────────────────────────
+    def _draw_dive_ui(self):
+        """심해 잠수 깊이 + 산소 UI — 화면 좌측"""
+        # 잠수 깊이 바 (세로)
+        bx, by, bw, bh = 795, 30, 10, 180
+        pygame.draw.rect(self.screen, (0,20,60), (bx, by, bw, bh), border_radius=4)
+        depth_ratio = self.player.dive_depth / self.player.dive_max
+        fill_h = int(bh * depth_ratio)
+        depth_col = (0, int(80*(1-depth_ratio)+40), int(180+75*depth_ratio))
+        pygame.draw.rect(self.screen, depth_col, (bx, by + bh - fill_h, bw, fill_h), border_radius=4)
+        pygame.draw.rect(self.screen, (0,150,255), (bx, by, bw, bh), 1, border_radius=4)
+
+        if self.player.dive_active:
+            d_pct = int(depth_ratio * 100)
+            self.draw_text(f"↓{d_pct}%", (bx + bw//2 + 14, by + bh//2), 12, depth_col)
+
+        # 산소 바 (가로, 화면 하단)
+        ox, oy, ow, oh = 10, 575, 200, 8
+        pygame.draw.rect(self.screen, (0,20,50), (ox, oy, ow, oh), border_radius=4)
+        o_ratio = self.player.dive_oxygen / self.player.dive_max_oxygen
+        o_fill = int(ow * o_ratio)
+        o_col = (0, 200, 255) if o_ratio > 0.5 else ((255, 200, 0) if o_ratio > 0.25 else (255, 50, 50))
+        if o_ratio < 0.25 and (self.game_time // 8) % 2 == 0:
+            o_col = (255, 255, 255)   # 위험 깜빡임
+        pygame.draw.rect(self.screen, o_col, (ox, oy, o_fill, oh), border_radius=4)
+        pygame.draw.rect(self.screen, (0,100,200), (ox, oy, ow, oh), 1, border_radius=4)
+
+        o_sec = self.player.dive_oxygen // 60
+        oxy_col = (0,200,255) if o_ratio > 0.5 else ((255,200,0) if o_ratio > 0.25 else (255,80,80))
+        self.draw_text(f"O₂ {o_sec}s", (ox + ow//2, oy + oh + 10), 14, oxy_col)
+
+        # 안내
+        if not self.player.dive_active:
+            self.draw_text("[Z] 심해 잠수", (110, oy - 12), 13, (0,150,200))
+
     def _draw_abyss_bar(self):
-        """심해 차원 남은 시간 바 — 화면 상단"""
         remain = self.abyss_timer / self.ABYSS_DURATION
         pulse  = int(200 + 55*math.sin(self.game_time*0.1))
         pygame.draw.rect(self.screen, (0,30,60), (10,595,780,4))
@@ -1815,70 +2401,208 @@ class GameManager:
         sec = self.abyss_timer // 60
         self.draw_text(f"심해 차원 {sec}s", (400,590), 15, (0,200,255))
 
-    def _draw_hud(self, progress):
-        # XP 바
-        fill_w = int((self.player.xp/self.player.xp_to_next)*780)
-        pygame.draw.rect(self.screen,(22,22,38),(10,10,780,11))
-        pygame.draw.rect(self.screen,(0,220,100),(10,10,fill_w,11))
-        pygame.draw.rect(self.screen,(45,45,65),(10,10,780,11),1)
+    def _draw_shop(self):
+        self.screen.fill((8, 6, 16))
+        rng = random.Random(13)
+        for _ in range(80):
+            x=rng.randint(0,800); y=rng.randint(0,600); b=rng.randint(10,50)
+            pygame.draw.circle(self.screen, (b+40, b, b+80), (x,y), 1)
 
-        # HP 바
-        hp_ratio = max(0, self.player.health/self.player.max_health)
-        hw = 170
-        pygame.draw.rect(self.screen,(50,8,8),(10,26,hw,15),border_radius=4)
-        hpc = (80,255,80) if hp_ratio>0.6 else ((255,200,0) if hp_ratio>0.3 else (255,50,50))
-        if self.player.invincible>0 and (self.player.invincible//5)%2==0: hpc=(255,255,255)
-        pygame.draw.rect(self.screen,hpc,(10,26,int(hw*hp_ratio),15),border_radius=4)
-        pygame.draw.rect(self.screen,(100,100,130),(10,26,hw,15),1,border_radius=4)
-        self.draw_text(f"HP {self.player.health}/{self.player.max_health}",(10+hw//2,33),14)
+        self.draw_text("NEON NEXUS MARKET", (400, 45), 44, (255, 220, 100))
+        self.draw_text("Protocol Enhancement & Skill Acquisition", (400, 85), 18, (255, 120, 50))
+        
+        # 보유 자원 바
+        pygame.draw.rect(self.screen, (50, 35, 20), (100, 105, 600, 35), border_radius=10)
+        self.draw_text(f"CREDITS: {self.gold:,} G   |   DIAMONDS: {self.diamonds:,} D", (400, 122), 18, (255, 230, 80))
 
-        # 쉴드
-        if self.player.max_shield > 0:
-            sr = self.player.shield/self.player.max_shield; sw=80
-            pygame.draw.rect(self.screen,(0,20,50),(185,26,sw,15),border_radius=4)
-            pygame.draw.rect(self.screen,(0,150,255),(185,26,int(sw*sr),15),border_radius=4)
-            pygame.draw.rect(self.screen,(0,100,200),(185,26,sw,15),1,border_radius=4)
-            self.draw_text(f"SH{self.player.shield}",(185+sw//2,33),14,(100,200,255))
+        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS
+        upgrade_keys = list(PERSISTENT_UPGRADES.keys())
+        skill_keys   = list(ACTIVE_SKILLS.keys())
+        all_keys     = upgrade_keys + skill_keys
+        
+        mx, my = pygame.mouse.get_pos()
+        cols = 2; cw, ch = 320, 65
+        x_start, y_start, x_gap, y_gap = 70, 160 + self.shop_scroll_y, 340, 75
 
-        # 타이머 — 시간 초과 후 보스 처치 대기 중이면 경고 표시
-        tl = max(0, self.current_chapter.duration - self.game_time//60)
-        if tl == 0:
-            final_bosses = ["void_god","abyss_sovereign","nexus_overmind","abyssal_tyrant"]
-            alive_finals = [e for e in self.enemies if e.etype in final_bosses]
-            if alive_finals:
-                # 깜빡이는 경고
-                col = (255,80,80) if (self.game_time // 20) % 2 == 0 else (255,200,80)
-                self.draw_text("★ 최종 보스 처치! ★",(400,32),22,col)
+        # 클리핑 설정 (헤더 영역 보호)
+        self.screen.set_clip(pygame.Rect(0, 145, 800, 600 - 145))
+
+        for i, ukey in enumerate(all_keys):
+            row = i // cols; ci = i % cols
+            is_skill = ukey in ACTIVE_SKILLS
+            data = ACTIVE_SKILLS[ukey] if is_skill else PERSISTENT_UPGRADES[ukey]
+            lvl = self.upgrades.get(ukey, 0) if not is_skill else self.owned_skills.get(ukey, 0)
+            
+            card = pygame.Rect(x_start + ci * x_gap, y_start + row * y_gap, cw, ch)
+            sel = (self.shop_sel == i); hov = card.collidepoint(mx, my)
+            
+            # 디자인: 호박색 유리 카드
+            bg = (50, 25, 10) if sel else ((35, 18, 5) if hov else (22, 12, 5))
+            bc = (255, 180, 50) if sel else ((180, 110, 40) if hov else (80, 50, 30))
+            if is_skill: bc = (255, 50, 100) if sel else (160, 30, 60)
+
+            pygame.draw.rect(self.screen, bg, card, border_radius=12)
+            pygame.draw.rect(self.screen, bc, card, 2 if sel else 1, border_radius=12)
+
+            # 아이템 내용 (왼쪽 정렬로 수정하여 겹침 방지)
+            self.draw_text(data["name"], (card.left + 70, card.top + 18), 16, (255, 240, 200), align="left")
+            desc = data["desc"]
+            if is_skill and lvl > 0:
+                desc = f"Lv.{lvl} 강화 상태 - " + desc
+            self.draw_text(desc[:32], (card.left + 70, card.top + 42), 11, (200, 170, 140), align="left")
+            
+            # 태그/레벨
+            tag_txt = f"LV.{lvl}" if lvl > 0 else ("SKILL" if is_skill else "LV.0")
+            pygame.draw.rect(self.screen, (0,0,0,140), (card.left+10, card.top+10, 50, 45), border_radius=6)
+            self.draw_text(tag_txt, (card.left+35, card.top+32), 12, bc)
+
+            # 가격 (오른쪽 정렬로 수정)
+            base_cost = data["cost"]
+            current_cost = base_cost * (lvl + 1) if lvl < data["max_lvl"] else -1
+            
+            if current_cost > 0:
+                currency = data.get("currency", "gold")
+                cur_icon = "G" if currency=="gold" else "D"
+                has_enough = (currency == "gold" and self.gold >= current_cost) or (currency == "diamond" and self.diamonds >= current_cost)
+                c_col = (255, 230, 80) if has_enough else (255, 80, 80)
+                self.draw_text(f"{current_cost}{cur_icon}", (card.right - 20, card.top + 32), 15, c_col, align="right")
             else:
-                self.draw_text("00:00",(400,32),28)
-        else:
-            self.draw_text(f"{tl//60:02d}:{tl%60:02d}",(400,32),28)
+                self.draw_text("MAX", (card.right - 20, card.top + 32), 14, (0, 255, 150), align="right")
 
-        # 점수
-        self.draw_text(f"{self.player.score:,}",(600,32),22,(255,220,80))
+        back_btn = pygame.Rect(320, 555, 160, 36); back_hov = back_btn.collidepoint(mx, my)
+        pygame.draw.rect(self.screen, (40, 45, 75) if back_hov else (20, 25, 40), back_btn, border_radius=10)
+        pygame.draw.rect(self.screen, (100, 120, 255), back_btn, 1, border_radius=10)
+        self.draw_text("RETURN TO BASE", (400, 573), 14, (200, 220, 255))
 
-        # 균열 보스 처치 수 표시
-        if self.rift_boss_kill_count > 0:
-            self.draw_text(f"⚫×{self.rift_boss_kill_count}",(720,32),16,(200,100,255))
+    def _save_data(self):
+        import json, os
+        data = {
+            "gold":     self.gold,
+            "diamonds": self.diamonds,
+            "crystals": self.crystals,
+            "upgrades": self.upgrades,
+            "owned_skills": self.owned_skills,
+            "last_roulette_time": self.last_roulette_time,
+            "pilot_name": self.pilot_name,
+            "pilot_rank": self.pilot_rank,
+            "pilot_callsign": self.pilot_callsign
+        }
+        try:
+            with open("save_data.json", "w") as f:
+                json.dump(data, f, indent=4)
+        except: pass
 
-        # 레벨/차원/무기/대쉬/변형
+    def _load_data(self):
+        import json, os
+        if os.path.exists("save_data.json"):
+            try:
+                with open("save_data.json", "r") as f:
+                    data = json.load(f)
+                    self.gold     = data.get("gold", 0)
+                    self.diamonds = data.get("diamonds", 0)
+                    self.crystals = data.get("crystals", 0)
+                    raw_skills = data.get("owned_skills", {})
+                    # 마이그레이션: 리스트 형태면 {이름: 1} 로 변환
+                    if isinstance(raw_skills, list):
+                        self.owned_skills = {k: 1 for k in raw_skills}
+                    else:
+                        self.owned_skills = raw_skills
+                    self.last_roulette_time = data.get("last_roulette_time", 0)
+                    self.pilot_name = data.get("pilot_name", "KIM")
+                    self.pilot_rank = data.get("pilot_rank", "COMMANDER")
+                    self.pilot_callsign = data.get("pilot_callsign", "RAVEN-01")
+                    saved_upg = data.get("upgrades", {})
+                    for k in self.upgrades:
+                        if k in saved_upg: self.upgrades[k] = saved_upg[k]
+                    
+                    # 로드 후 플레이어에게 스킬 부여 (이미 게임 중이라면)
+                    if self.player:
+                        self.player.active_skills = list(self.owned_skills)
+            except: pass
+
+    def _draw_hud(self, progress):
+        # 1. 상단 메인 HUD 프레임
+        pygame.draw.rect(self.screen, (10, 15, 30), (5, 5, 790, 55), border_radius=4)
+        pygame.draw.rect(self.screen, (0, 180, 255), (5, 5, 790, 55), 1, border_radius=4)
+        
+        # 2. XP 레벨 게이지 (프레임 상단 슬림 바)
+        xp_w = int((self.player.xp / self.player.xp_to_next) * 780)
+        pygame.draw.rect(self.screen, (15, 20, 35), (10, 8, 780, 5), border_radius=2)
+        pygame.draw.rect(self.screen, (0, 230, 150), (10, 8, xp_w, 5), border_radius=2)
+        # XP 내부 디바이더
+        for i in range(1, 10):
+            pygame.draw.line(self.screen, (0, 0, 0, 80), (10 + i * 78, 8), (10 + i * 78, 12))
+
+        # 3. CORE INTEGRITY (HP) - 테크니컬 디자인
+        hp_x, hp_y, hp_w, hp_h = 10, 20, 320, 22
+        hp_ratio = max(0, self.player.health / self.player.max_health)
+        pygame.draw.rect(self.screen, (40, 10, 20), (hp_x, hp_y, hp_w, hp_h))
+        if hp_ratio > 0:
+            hpc = (200, 50, 70) if hp_ratio > 0.3 else (255, 30, 30)
+            if self.player.invincible > 0 and (self.player.invincible // 5) % 2 == 0: hpc = (255, 255, 255)
+            if self.player.overload_timer > 0: hpc = (255, 120, 0)
+            pygame.draw.rect(self.screen, hpc, (hp_x, hp_y, int(hp_w * hp_ratio), hp_h))
+            # 세그먼트 눈금
+            for i in range(1, 10):
+                pygame.draw.line(self.screen, (0,0,0,120), (hp_x + i * (hp_w/10), hp_y), (hp_x + i * (hp_w/10), hp_y + hp_h-1))
+
+        self.draw_text(f"선체 내구도: {int(self.player.health)} / {self.player.max_health}", (hp_x + hp_w//2, hp_y + hp_h//2), 12, (255,255,255))
+
+        # 4. AEGIS FIELD (Shield)
+        sh_x, sh_y, sh_w, sh_h = 340, 20, 220, 16
+        sh_ratio = self.player.shield / self.player.max_shield if self.player.max_shield > 0 else 0
+        pygame.draw.rect(self.screen, (10, 35, 60), (sh_x, sh_y, sh_w, sh_h))
+        if sh_ratio > 0:
+            pygame.draw.rect(self.screen, (0, 180, 255), (sh_x, sh_y, int(sh_w * sh_ratio), sh_h))
+        self.draw_text(f"보호 쉴드: {int(self.player.shield)}", (sh_x + sh_w//2, sh_y + sh_h//2), 11, (100, 220, 255))
+
+        # 5. MISSION STATS (TIME 제거됨)
+        timer_x = 570
+        # tl = max(0, self.current_chapter.duration - self.game_time//60)
+        # t_str = f"{tl//60:02d}:{tl%60:02d}"
+        # self.draw_text(t_str, (timer_x + 40, 31), 24, (255, 255, 100))
+        self.draw_text(f"G: {self.gold:,}  D: {self.diamonds:,}", (timer_x + 140, 20), 16, (255, 230, 80))
+        self.draw_text(f"점수: {self.player.score:,}", (timer_x + 140, 38), 13, (220, 220, 220))
+        
+        # 6. ACTIVE SKILLS HUD (프리미엄 세로 배치 및 인디케이터)
+        for i, skey in enumerate(self.player.active_skills):
+            from entities import ACTIVE_SKILLS
+            sdata = ACTIVE_SKILLS[skey]
+            cd = self.player.skill_cooldowns[skey]
+            sx, sy = 24, 75 + i * 45
+            
+            # 스킬 슬롯 배경
+            pygame.draw.rect(self.screen, (40, 25, 15, 180), (sx, sy, 120, 34), border_radius=6)
+            pygame.draw.rect(self.screen, (255, 120, 0), (sx, sy, 120, 34), 1, border_radius=6)
+            
+            if cd > 0:
+                fill_h = int(34 * (cd / sdata["cd"]))
+                pygame.draw.rect(self.screen, (80, 40, 20), (sx, sy + 34 - fill_h, 120, fill_h), border_radius=6)
+            
+            self.draw_text(f"{i+1}", (sx + 15, sy + 17), 16, (255, 230, 80))
+            self.draw_text(sdata['name'], (sx + 70, sy + 17), 11, (255, 255, 255))
+            if i >= 6: # 단축키 범위를 넘어서는 스킬에 대한 표시
+                self.draw_text("N/A", (sx + 15, sy + 17), 10, (150, 150, 150))
+
+        # ★ HUD 연결 테크니컬 라인 (Integrated Frame)
+        pygame.draw.line(self.screen, (150, 80, 0), (335, 20), (335, 45), 1) # HP - Shield 구분
+        pygame.draw.line(self.screen, (150, 80, 0), (565, 20), (565, 45), 1) # Shield - Stats 구분
+        pygame.draw.lines(self.screen, (120, 50, 0), False, [(10, 62), (150, 62), (170, 75)], 1)
+
         form = SHIP_FORMS.get(self.player.ship_form, SHIP_FORMS["fighter"])
         dash_ready = "●" if self.player.dash_cd==0 else f"○{self.player.dash_cd//10}"
-        dim_txt  = "ABYSS" if self.abyss_active else self.dimension[0]
+        dim_txt  = "심해" if self.abyss_active else ("공허" if self.dimension=="VOID" else "물질")
+        dive_txt = f"  ↓{int(self.player.dive_depth)}%" if self.player.dive_active else ""
         self.draw_text(
-            f"LV:{self.player.level}  [{dim_txt}]  {self.player.weapon['name']}  {dash_ready}",
+            f"LV:{self.player.level}  [{dim_txt}]  {self.player.weapon['name']}  {dash_ready}{dive_txt}",
             (210,52),16,(255,230,80))
         self.draw_text(f"[{form['name']}]",(620,52),14,(180,220,255))
-
-        # 설정 버튼 힌트 (우측 상단)
         cfg_col = (0, 220, 255) if self.settings_open else (70, 90, 110)
         self.draw_text("⚙ ESC/TAB", (760, 52), 12, cfg_col)
 
-        # 진행도 바
-        pygame.draw.rect(self.screen,(14,14,28),(10,583,780,7))
-        pygame.draw.rect(self.screen,(0,140,255),(10,583,int(780*progress),7))
+        # pygame.draw.rect(self.screen,(14,14,28),(10,583,780,7))
+        # pygame.draw.rect(self.screen,(0,140,255),(10,583,int(780*progress),7))
 
-        # 무기 목록
         for i,wk in enumerate(self.player.unlocked_weapons):
             wi = WEAPONS[wk]; active = (wk==self.player.weapon_key)
             col = (255,230,80) if active else (70,70,95)
@@ -1896,14 +2620,11 @@ class GameManager:
             pass
         pygame.draw.rect(self.screen,(55,55,75),(mmx,mmy,mmw,mmh),1)
         cx=mmx+mmw//2; cy=mmy+mmh//2; pw=self.player.world_pos
-
-        # 블랙홀
         for bh in self.blackholes:
             dx=int((bh.world_pos.x-pw.x)*scale); dy=int((bh.world_pos.y-pw.y)*scale)
             sx=cx+dx; sy=cy+dy
             if mmx<=sx<=mmx+mmw and mmy<=sy<=mmy+mmh:
                 pygame.draw.circle(self.screen,(180,0,255),(sx,sy),4)
-
         for enemy in self.enemies:
             if enemy.dimension_type==self.dimension or self.abyss_active:
                 dx=int((enemy.world_pos.x-pw.x)*scale); dy=int((enemy.world_pos.y-pw.y)*scale)
@@ -1911,13 +2632,11 @@ class GameManager:
                 if mmx<=sx<=mmx+mmw and mmy<=sy<=mmy+mmh:
                     col=(255,80,80) if enemy.max_hp>=20 else (255,150,50)
                     pygame.draw.circle(self.screen,col,(sx,sy),2)
-
         for item in self.items:
             dx=int((item.world_pos.x-pw.x)*scale); dy=int((item.world_pos.y-pw.y)*scale)
             sx=cx+dx; sy=cy+dy
             if mmx<=sx<=mmx+mmw and mmy<=sy<=mmy+mmh:
                 pygame.draw.circle(self.screen,(0,255,100),(sx,sy),2)
-
         pygame.draw.circle(self.screen,(0,255,255),(cx,cy),3)
         pygame.draw.rect(self.screen,(60,60,80),(mmx,mmy,mmw,mmh),1)
 
@@ -1927,7 +2646,6 @@ class GameManager:
         self.screen.blit(ov,(0,0))
         self.draw_text("── 우주선 변형 선택 ──",(400,150),38,(0,220,255))
         self.draw_text("← → 이동  ENTER/F 확정  ESC 취소",(400,190),18,(150,150,200))
-
         forms = self.player.unlocked_forms
         n = len(forms)
         for i,fk in enumerate(forms):
@@ -1940,8 +2658,6 @@ class GameManager:
             bc   = (255,220,50) if sel else (80,80,120)
             pygame.draw.rect(self.screen, bg, card, border_radius=10)
             pygame.draw.rect(self.screen, bc, card, 2 if sel else 1, border_radius=10)
-
-            # 변형 미리보기 (폴리곤)
             poly = fd["poly"]
             offset_x = cx-18; offset_y = cy-55
             shifted = [(p[0]+offset_x, p[1]+offset_y) for p in poly]
@@ -1949,7 +2665,6 @@ class GameManager:
                 col = fd["color_p"] if self.dimension=="PHYSICAL" else fd["color_v"]
                 pygame.draw.polygon(self.screen, col, shifted)
                 pygame.draw.polygon(self.screen, (255,255,255), shifted, 1)
-
             self.draw_text(fd["name"].split("(")[0].strip(),(cx,cy+18),16,
                            (255,230,50) if sel else (180,180,220))
             self.draw_text(fd["desc"][:20],(cx,cy+40),12,(150,180,200))
@@ -1976,34 +2691,67 @@ class GameManager:
             self.draw_text(f"[{i+1}]  {text}",(400,y+8),26,(255,220,60))
 
     def _draw_death(self):
-        self.screen.fill((28,4,4))
-        rng=random.Random(self.game_time)
+        self.screen.fill((18, 4, 8))
+        rng = random.Random(self.game_time)
         for _ in range(60):
             x=rng.randint(0,800); y=rng.randint(0,600)
-            pygame.draw.circle(self.screen,(rng.randint(80,180),0,0),(x,y),1)
-        self.draw_text("MISSION FAILED",(400,235),60,(255,40,40))
+            pygame.draw.circle(self.screen, (rng.randint(60, 140), 10, 10), (x,y), 1)
+        
+        # 상단 헤더
+        pygame.draw.line(self.screen, (255, 50, 50), (100, 180), (700, 180), 2)
+        self.draw_text("MISSION STATUS: FAILURE", (400, 155), 24, (255, 80, 80))
+        self.draw_text("미션 종료", (400, 230), 62, (255, 40, 40))
+        
         if self.player:
-            self.draw_text(f"점수: {self.player.score:,}",(400,316),32,(255,200,80))
-            self.draw_text(f"처치: {self.player.kill_count}  최대 콤보: {self.player.max_combo}  LV: {self.player.level}",(400,362),20,(170,170,200))
-            form = SHIP_FORMS.get(self.player.ship_form, SHIP_FORMS["fighter"])
-            self.draw_text(f"최종 변형: {form['name'].split('(')[0]}",(400,392),18,(180,220,255))
-        self.draw_text(f"최고 점수: {self.high_score:,}",(400,428),22,(255,230,100))
-        self.draw_text("Press [R] — 메뉴로",(400,480),24,(140,140,170))
+            # 통계 박스
+            pygame.draw.rect(self.screen, (30, 10, 10), (200, 300, 400, 120), border_radius=10)
+            pygame.draw.rect(self.screen, (150, 40, 40), (200, 300, 400, 120), 1, border_radius=10)
+            
+            self.draw_text(f"최종 점수: {self.player.score:,}", (400, 325), 28, (255, 220, 80))
+            self.draw_text(f"KILLS: {self.player.kill_count}  |  MAX COMBO: {self.player.max_combo}", (400, 365), 16, (200, 180, 180))
+            self.draw_text(f"REACHED LEVEL: {self.player.level}", (400, 390), 16, (180, 220, 255))
+            
+            # 획득 보상 표시
+            if hasattr(self, "last_death_rewards"):
+                rw = self.last_death_rewards
+                reward_txt = f" 보상 획득:  +{rw['gold']:,} GOLD   +{rw['dia']:,} DIAMOND"
+                self.draw_text(reward_txt, (400, 420), 18, (0, 255, 150))
+            
+        self.draw_text(f"HIGH SCORE: {self.high_score:,}", (400, 445), 20, (140, 160, 200))
+        
+        # 하단 푸터
+        pygame.draw.line(self.screen, (255, 50, 50), (100, 500), (700, 500), 2)
+        pulse = int(140 + 60 * math.sin(self.game_time * 0.1))
+        self.draw_text("[R] 키를 눌러 베이스로 복귀", (400, 530), 22, (pulse, pulse, pulse))
 
     def _draw_win(self):
-        self.screen.fill((4,22,8))
-        rng=random.Random(self.game_time)
+        self.screen.fill((4, 18, 12))
+        rng = random.Random(self.game_time)
         for _ in range(80):
             x=rng.randint(0,800); y=rng.randint(0,600)
-            pygame.draw.circle(self.screen,(0,rng.randint(80,180),rng.randint(40,100)),(x,y),1)
-        self.draw_text("CHAPTER CLEARED!",(400,210),54,(0,255,100))
+            pygame.draw.circle(self.screen, (0, rng.randint(80, 160), 100), (x,y), 1)
+            
+        # 상단 헤더
+        pygame.draw.line(self.screen, (0, 255, 150), (100, 160), (700, 160), 2)
+        self.draw_text("MISSION STATUS: COMPLETE", (400, 135), 24, (0, 255, 180))
+        self.draw_text("챕터 클리어!", (400, 215), 58, (255, 255, 255))
+        
         if self.player:
-            self.draw_text(f"점수: {self.player.score:,}",(400,285),32,(255,220,80))
-            self.draw_text(f"처치: {self.player.kill_count}  최대 콤보: {self.player.max_combo}  LV: {self.player.level}",(400,330),20,(170,200,170))
-        if self.rift_boss_kill_count > 0:
-            self.draw_text(f"⚫ 균열 보스 처치: {self.rift_boss_kill_count}회",(400,362),20,(200,100,255))
-        self.draw_text(f"최고 점수: {self.high_score:,}",(400,398),22,(255,230,100))
-        self.draw_text("Press [M] — 메뉴로",(400,456),24,(90,200,130))
+            # 보상 박스
+            pygame.draw.rect(self.screen, (10, 40, 30), (180, 280, 440, 130), border_radius=12)
+            pygame.draw.rect(self.screen, (0, 255, 120), (180, 280, 440, 130), 1, border_radius=12)
+            
+            self.draw_text(f"획득 점수: {self.player.score:,}", (400, 310), 30, (255, 220, 80))
+            self.draw_text(f"ELIMINATED: {self.player.kill_count}  |  MAX COMBO: {self.player.max_combo}", (400, 355), 16, (180, 220, 180))
+            if self.rift_boss_kill_count > 0:
+                self.draw_text(f"⚫ RIFT BOSS ELIMINATED: {self.rift_boss_kill_count} UNITS", (400, 385), 14, (200, 120, 255))
+            
+        self.draw_text(f"PERSONAL BEST: {self.high_score:,}", (400, 435), 20, (140, 180, 160))
+        
+        # 하단 푸터
+        pygame.draw.line(self.screen, (0, 255, 150), (100, 490), (700, 490), 2)
+        pulse = int(180 + 75 * math.sin(self.game_time * 0.1))
+        self.draw_text("[M] 키를 눌러 베이스로 복귀", (400, 525), 22, (pulse, pulse, pulse))
 
     # ─────────────────────────────────────
     def _get_font(self, size):
@@ -2029,8 +2777,17 @@ class GameManager:
             self._font_cache[size]=font
         return self._font_cache[size]
 
-    def draw_text(self, text, pos, size, color=(255,255,255)):
+    def draw_text(self, text, pos, size, color=(255,255,255), align="center"):
         font=self._get_font(size)
         img =font.render(text,True,color)
-        rect=img.get_rect(center=pos)
+        if align == "left":
+            rect=img.get_rect(midleft=pos)
+        elif align == "right":
+            rect=img.get_rect(midright=pos)
+        else:
+            rect=img.get_rect(center=pos)
         self.screen.blit(img,rect)
+
+if __name__ == "__main__":
+    from main import main
+    main()
