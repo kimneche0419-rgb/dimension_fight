@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pygame-ce
+pygbag
+python-multipart

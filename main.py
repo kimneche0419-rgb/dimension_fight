@@ -1,8 +1,9 @@
 import pygame
 import sys
+import asyncio
 from engine import GameManager
 
-def main():
+async def main():
     pygame.init()
     # 원상 복귀: 고해상도 지원 없이 800x600 기본 창 모드
     screen = pygame.display.set_mode((800, 600))
@@ -32,9 +33,12 @@ def main():
         gm.update(events)
         gm.draw()
         gm.clock.tick(60)
+        
+        # Pygbag/Web compatibility
+        await asyncio.sleep(0)
 
     pygame.quit()
     sys.exit()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
