@@ -2,6 +2,7 @@ import pygame
 from pygame.math import Vector2
 import random
 import math
+import os
 
 _bh_font = [None]  # Blackhole 타이머 폰트 캐시 (pygame.init 후 첫 사용 시 초기화)
 
@@ -94,23 +95,112 @@ PERSISTENT_UPGRADES = {
 }
 
 active_skills = {
-    "nova_blast":      {"name": "노바 블래스트",   "cost": 2000, "currency": "gold", "desc": "주변 모든 적에게 강력한 광역 데미지", "cd": 600, "max_lvl": 10},
-    "time_warp":       {"name": "타임 워프",    "cost": 50, "currency": "diamond", "desc": "시간을 왜곡하여 모든 적의 속도 감소", "cd": 1200, "max_lvl": 5},
-    "vampirism":       {"name": "뱀파이어리즘",    "cost": 100, "currency": "diamond", "desc": "적 사살 시 일정량 체력 회복 (지속 효과)", "cd": 1800, "max_lvl": 5},
-    "shield_overload": {"name": "쉴드 오버로드",   "cost": 1500, "currency": "gold", "desc": "쉴드 즉시 완충 및 5초간 공격력 +50%", "cd": 900, "max_lvl": 10},
-    "gravity_surge":   {"name": "중력 서지",      "cost": 80, "currency": "diamond", "desc": "마우스 위치에 5초간 블랙홀 생성", "cd": 1500, "max_lvl": 8},
-    "stealth_cloak":   {"name": "스텔스 클로킹",   "cost": 120, "currency": "diamond", "desc": "5초간 무적 및 이동 속도 대폭 증가", "cd": 2000, "max_lvl": 5},
-    "shadow_extraction":{"name": "그림자 추출",    "cost": 250, "currency": "diamond", "desc": "나혼렙: 그림자 병사를 소환하여 함께 전투", "cd": 2400, "max_lvl": 5},
-    "getsuga_tensho":  {"name": "월아천충",      "cost": 3000, "currency": "gold", "desc": "블리치: 거대한 보이드 에너지를 방출", "cd": 800, "max_lvl": 10},
-    "infinite_void":   {"name": "무량공처",      "cost": 400, "currency": "diamond", "desc": "주술회전: 모든 적을 빙결시키고 에너지를 속박", "cd": 3600, "max_lvl": 3},
-    "titan_form":      {"name": "진격의 거인",   "cost": 500, "currency": "diamond", "desc": "진격거: 거대화하여 무적 상태로 적을 짓밟음", "cd": 3000, "max_lvl": 5},
-    "thunder_spear":   {"name": "뇌창",         "cost": 3500, "currency": "gold", "desc": "진격거: 강력한 폭발을 일으키는 투척 병기", "cd": 1000, "max_lvl": 10},
-    "amaterasu":       {"name": "아마테라스",    "cost": 600, "currency": "diamond", "desc": "나루토: 영구적인 흑염으로 적을 불태움", "cd": 1800, "max_lvl": 5},
-    "hollow_purple":    {"name": "허식 자",      "cost": 1000, "currency": "diamond", "desc": "주술회전: 창과 적을 융합하여 전방 소멸", "cd": 2400, "max_lvl": 5, "type": "charge"},
-    "gomu_gatling":    {"name": "고무고무 가틀링", "cost": 4000, "currency": "gold", "desc": "원피스: 5초간 전방향 무차별 난타", "cd": 1800, "max_lvl": 10},
-    "izanagi":         {"name": "이자나기",      "cost": 1200, "currency": "diamond", "desc": "나루토: 사망 시 1회 고정 부활 (패시브)", "cd": 7200, "max_lvl": 3, "type": "passive"},
+    "nova_blast":      {"name": "노바 블래스트",   "desc": "주변 모든 적에게 강력한 광역 데미지", "cd": 600, "max_lvl": 10, "color": (255, 120, 0)},
+    "time_warp":       {"name": "타임 워프",    "desc": "시간을 왜곡하여 모든 적의 속도 감소", "cd": 1200, "max_lvl": 5, "color": (100, 255, 255)},
+    "vampirism":       {"name": "뱀파이어리즘",    "desc": "적 사살 시 일정량 체력 회복 (지속 효과)", "cd": 1800, "max_lvl": 5, "color": (255, 50, 50)},
+    "shield_overload": {"name": "쉴드 오버로드",   "desc": "쉴드 즉시 완충 및 5초간 공격력 +50%", "cd": 900, "max_lvl": 10, "color": (255, 255, 255)},
+    "gravity_surge":   {"name": "중력 서지",      "desc": "마우스 위치에 5초간 블랙홀 생성", "cd": 1500, "max_lvl": 8, "color": (150, 0, 255)},
+    "stealth_cloak":   {"name": "스텔스 클로킹",   "desc": "5초간 무적 및 이동 속도 대폭 증가", "cd": 2000, "max_lvl": 5, "color": (180, 180, 200)},
+    "shadow_extraction":{"name": "그림자 추출",    "desc": "나혼렙: 그림자 병사를 소환하여 함께 전투", "cd": 2400, "max_lvl": 5, "color": (100, 0, 255)},
+    "getsuga_tensho":  {"name": "월아천충",      "desc": "블리치: 거대한 보이드 에너지를 방출", "cd": 800, "max_lvl": 10, "color": (255, 0, 0)},
+    "infinite_void":   {"name": "무량공처",      "desc": "주술회전: 모든 적을 빙결시키고 에너지를 속박", "cd": 3600, "max_lvl": 3, "color": (255, 255, 255)},
+    "titan_form":      {"name": "진격의 거인",   "desc": "진격거: 거대화하여 무적 상태로 적을 짓밟음", "cd": 3000, "max_lvl": 5, "color": (200, 100, 50)},
+    "thunder_spear":   {"name": "뇌창",         "desc": "진격거: 강력한 폭발을 일으키는 투척 병기", "cd": 1000, "max_lvl": 10, "color": (255, 230, 0)},
+    "amaterasu":       {"name": "아마테라스",    "desc": "나루토: 영구적인 흑염으로 적을 불태움", "cd": 1800, "max_lvl": 5, "color": (50, 0, 80)},
+    "hollow_purple":    {"name": "허식 자",      "desc": "주술회전: 창과 적을 융합하여 전방 소멸", "cd": 2400, "max_lvl": 5, "type": "charge", "color": (200, 0, 255)},
+    "gomu_gatling":    {"name": "고무고무 가틀링", "desc": "원피스: 5초간 전방향 무차별 난타", "cd": 1800, "max_lvl": 10, "color": (255, 200, 150)},
+    "izanagi":         {"name": "이자나기",      "desc": "나루토: 사망 시 1회 고정 부활 (패시브)", "cd": 7200, "max_lvl": 3, "type": "passive", "color": (0, 255, 120)},
 }
 ACTIVE_SKILLS = active_skills
+
+RUNESTONES = {
+    "naruto": {
+        "name": "나루토 룬석",
+        "desc": "닌자의 차크라를 다루는 룬석",
+        "color": (255, 140, 0),
+        "max_lvl": 10,
+        "base_cost": 3000,
+        "currency": "gold",
+        "unlocks": {
+            1: "amaterasu",
+            5: "izanagi",
+        }
+    },
+    "jujutsu": {
+        "name": "주술회전 룬석",
+        "desc": "주력을 통제하는 룬석",
+        "color": (180, 0, 255),
+        "max_lvl": 10,
+        "base_cost": 4000,
+        "currency": "gold",
+        "unlocks": {
+            1: "hollow_purple",
+            5: "infinite_void",
+        }
+    },
+    "aot": {
+        "name": "진격거 룬석",
+        "desc": "거인의 힘을 다루는 룬석",
+        "color": (255, 100, 50),
+        "max_lvl": 10,
+        "base_cost": 3500,
+        "currency": "gold",
+        "unlocks": {
+            1: "thunder_spear",
+            5: "titan_form",
+        }
+    },
+    "sololeveling": {
+        "name": "나혼렙 룬석",
+        "desc": "그림자 군주의 룬석",
+        "color": (100, 0, 255),
+        "max_lvl": 10,
+        "base_cost": 100,
+        "currency": "diamond",
+        "unlocks": {
+            1: "shadow_extraction",
+        }
+    },
+    "bleach": {
+        "name": "블리치 룬석",
+        "desc": "사신의 영압을 다루는 룬석",
+        "color": (255, 0, 0),
+        "max_lvl": 10,
+        "base_cost": 2500,
+        "currency": "gold",
+        "unlocks": {
+            1: "getsuga_tensho",
+        }
+    },
+    "onepiece": {
+        "name": "원피스 룬석",
+        "desc": "패기와 열매의 룬석",
+        "color": (255, 200, 0),
+        "max_lvl": 10,
+        "base_cost": 5000,
+        "currency": "gold",
+        "unlocks": {
+            1: "gomu_gatling",
+        }
+    },
+    "cosmic": {
+        "name": "우주 룬석",
+        "desc": "기본 차원 제어 룬석",
+        "color": (0, 255, 255),
+        "max_lvl": 15,
+        "base_cost": 1500,
+        "currency": "gold",
+        "unlocks": {
+            1: "nova_blast",
+            3: "vampirism",
+            5: "stealth_cloak",
+            7: "shield_overload",
+            9: "time_warp",
+            11: "gravity_surge",
+        }
+    }
+}
+RUNESTONE_ORDER = ["cosmic", "naruto", "jujutsu", "sololeveling", "bleach", "aot", "onepiece"]
 
 
 
@@ -182,6 +272,38 @@ SHIP_FORMS = {
         "void_bonus": 1.5,
     },
 }
+
+_ship_images = {}
+def get_ship_image(form_name, size=(40, 40)):
+    key = (form_name, size)
+    if key not in _ship_images:
+        filename_map = {
+            "fighter": "전투기",
+            "cruiser": "순양함",
+            "stealth": "스텔스",
+            "dreadnought": "드레드노트",
+            "abyss_ship": "심해함",
+            "phantom": "팬텀"
+        }
+        fname_base = filename_map.get(form_name)
+        frames = []
+        if fname_base:
+            for i in range(4):
+                path = f"assets_frames/{fname_base}_{i}.png"
+                if os.path.exists(path):
+                    try:
+                        img = pygame.image.load(path).convert_alpha()
+                        # Make it slightly larger so it fits well in the bounding box
+                        # since the extracted canvas has a lot of padding for the flames.
+                        # Wait, size is exactly the size we requested.
+                        frames.append(pygame.transform.smoothscale(img, size))
+                    except Exception as e:
+                        pass
+        if frames:
+            _ship_images[key] = frames
+        else:
+            _ship_images[key] = None
+    return _ship_images[key]
 
 # ─────────────────────────────────────────
 #  PARTICLE
@@ -840,30 +962,56 @@ class Player(pygame.sprite.Sprite):
                         for a, b in zip(pa2, pb2)]
 
             poly = lerp_poly(poly_prev, poly_curr, t)
-            if len(poly) >= 3:
-                pygame.draw.polygon(self.base_image, color, poly)
-                pygame.draw.polygon(self.base_image, (255,255,255), poly, 1)
 
-            eng_col = (0,200,255) if self.abyss_mode else (255,150,50)
-            if self.dive_active:
-                eng_col = (0,120,255)
-            for ep in form["engine_pos"]:
-                er = form["engine_r"]
-                pygame.draw.circle(self.base_image, eng_col, ep, er)
-                if self.speed_boost > 0:
-                    pygame.draw.circle(self.base_image, (255,255,200), ep, er+2, 1)
-                # 과부하 엔진 이펙트
-                if self.overload_timer > 0:
-                    pygame.draw.circle(self.base_image, (255,100,0), ep, er+3, 1)
+            ship_frames = get_ship_image(self.ship_form, (sz*2, sz*2)) # Scale larger because extracted frames have lots of padding
+            
+            if ship_frames:
+                speed_ratio = self.vel.length() / (SETTINGS.ship_max_speed * self.get_speed_mult() + 0.001)
+                
+                if self.dash_timer > 0:
+                    frame_idx = len(ship_frames) - 1
+                elif speed_ratio < 0.1:
+                    frame_idx = 0
+                elif speed_ratio < 0.4:
+                    frame_idx = 1
+                elif speed_ratio < 0.8:
+                    frame_idx = 2
+                else:
+                    frame_idx = 3
+                
+                frame_idx = min(frame_idx, len(ship_frames)-1)
+                ship_img = ship_frames[frame_idx]
+                
+                rect = ship_img.get_rect(center=(sz//2, sz//2))
+                self.base_image.blit(ship_img, rect)
+                
+                # Draw colored outline to preserve form dimension tints
+                pygame.draw.circle(self.base_image, color, (sz//2, sz//2), sz//2, 1)
+            else:
+                if len(poly) >= 3:
+                    pygame.draw.polygon(self.base_image, color, poly)
+                    pygame.draw.polygon(self.base_image, (255,255,255), poly, 1)
 
-            if self.ship_form == "dreadnought":
-                pygame.draw.rect(self.base_image, (200,50,50), (0,10,6,8))
-                pygame.draw.rect(self.base_image, (200,50,50), (34,10,6,8))
-            if self.ship_form == "abyss_ship":
-                pygame.draw.circle(self.base_image, (0,150,255), (20,20), 18, 1)
-            if self.ship_form == "phantom":
-                aura_col = (200,200,255) if self.dimension=="PHYSICAL" else (255,220,0)
-                pygame.draw.circle(self.base_image, aura_col, (20,20), 19, 1)
+                eng_col = (0,200,255) if self.abyss_mode else (255,150,50)
+                if self.dive_active:
+                    eng_col = (0,120,255)
+                for ep in form["engine_pos"]:
+                    er = form["engine_r"]
+                    pygame.draw.circle(self.base_image, eng_col, ep, er)
+                    if self.speed_boost > 0:
+                        pygame.draw.circle(self.base_image, (255,255,200), ep, er+2, 1)
+                    # 과부하 엔진 이펙트
+                    if self.overload_timer > 0:
+                        pygame.draw.circle(self.base_image, (255,100,0), ep, er+3, 1)
+
+                if self.ship_form == "dreadnought":
+                    pygame.draw.rect(self.base_image, (200,50,50), (0,10,6,8))
+                    pygame.draw.rect(self.base_image, (200,50,50), (34,10,6,8))
+                if self.ship_form == "abyss_ship":
+                    pygame.draw.circle(self.base_image, (0,150,255), (20,20), 18, 1)
+                if self.ship_form == "phantom":
+                    aura_col = (200,200,255) if self.dimension=="PHYSICAL" else (255,220,0)
+                    pygame.draw.circle(self.base_image, aura_col, (20,20), 19, 1)
 
             #  잠수 기포 이펙트
             if self.dive_active and self.dive_depth > 10:

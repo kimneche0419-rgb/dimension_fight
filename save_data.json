@@ -1,0 +1,36 @@
+{
+    "gold": 10142,
+    "diamonds": 989567,
+    "crystals": 51,
+    "upgrades": {
+        "shield_boost": 3,
+        "speed_boost": 7,
+        "hp_boost": 10,
+        "xp_bonus": 0,
+        "dash_cdr": 0,
+        "dmg_boost": 0
+    },
+    "owned_runestones": {
+        "cosmic": 7,
+        "jujutsu": 1
+    },
+    "equipped_skills": [
+        "hollow_purple",
+        "stealth_cloak",
+        "nova_blast",
+        "vampirism",
+        "shield_overload"
+    ],
+    "last_roulette_time": 1777292220.2362373,
+    "pilot_name": "KIM",
+    "pilot_rank": "COMMANDER",
+    "pilot_callsign": "RAVEN-01",
+    "high_score": 63620,
+    "played_job_chapter": true,
+    "player_job": "\uc804\uc0ac",
+    "owned_jobs": [
+        "\uc804\uc0ac",
+        "\ud761\ud608\uadc0"
+    ],
+    "job_stats": {}
+}

@@ -110,9 +110,34 @@ class GameManager:
     def __init__(self, screen):
         self.screen        = screen
         self.clock         = pygame.time.Clock()
-        self.state         = "MENU"
+        self.state         = "INTRO"
         self.dimension     = "PHYSICAL"
         self.difficulty    = 1.0
+
+        #  스토리 인트로 시스템
+        self.story_idx = 0
+        self.story_slides = [
+            {
+                "title": "서기 2142년, 종말의 시작",
+                "text": "우주의 엔트로피가 한계에 도달했습니다.\n물리 법칙이 붕괴하고, 수많은 은하가 비명 속에 사라졌습니다.",
+                "color": (255, 100, 100)
+            },
+            {
+                "title": "차원의 파편",
+                "text": "균열 너머에서 나타난 정체불명의 존재들이\n남은 문명들을 하나둘씩 집어삼키기 시작했습니다.",
+                "color": (100, 150, 255)
+            },
+            {
+                "title": "디멘션 파이터",
+                "text": "당신은 차원 이동 엔진이 탑재된 유일한 기체의 파일럿입니다.\n차원의 심장부를 관통하여 우주의 멸망을 막아야 합니다.",
+                "color": (0, 255, 200)
+            },
+            {
+                "title": "최후의 출격",
+                "text": "이제 마지막 엔진을 가동하십시오.\n우주의 운명이 당신의 조종간에 달려 있습니다.",
+                "color": (255, 255, 255)
+            }
+        ]
         self.camera_offset = Vector2(0,0)
 
         self.abyss_active   = False
@@ -167,10 +192,11 @@ class GameManager:
         self.respec_confirm_active = False
         self.respec_in_progress    = False
 
-        # 상점 탭 (0=업그레이드/스킬, 1=직업마켓)
+        # 상점 탭 (0=업그레이드/룬석, 1=직업마켓)
         self.shop_tab = 0
         self.job_market_sel = 0
         self.owned_jobs = ["전사"]  # 보유 중인 직업 리스트
+        self.owned_runestones = {"cosmic": 1} # 초기 룬석
 
         #  심해 잠수 전용 상태
         self.dive_spawn_timer = 0
@@ -348,19 +374,31 @@ class GameManager:
 
     # ─────────────────────────────────────
     def start_game(self, chapter_id):
-        self.pending_chapter_id  = chapter_id
-        self.color_select_active = True
-        self.color_select_idx    = 0
-        self.state = "COLOR_SELECT"
+        self._do_start_game(chapter_id)
 
     def _do_start_game(self, chapter_id):
         ch = self.chapters[chapter_id]
         self.current_chapter = ch
+        
+        # 1. 시스템 플래그 및 모달 UI 완전 초기화 (사망/재시작 시 잔상 제거)
+        self.settings_open = False
+        self.job_viewer_active = False
+        self.reward_roulette_active = False
+        self.job_select_active = False
+        self.levelup_active = False
+        self.form_select_active = False
+        self.respec_confirm_active = False
+        self.skill_manage_open = False
+        
+        # 2. 플레이어 생성 및 초기 설정
         self.player = Player((0,0))
-        self.player.active_skills = list(self.equipped_skills) #  장착된 스킬만 부여
+        self.player.active_skills = list(self.equipped_skills)
         self.player.mode = ch.mode
         self.player.set_dimension("PHYSICAL")
+        if not hasattr(self, "color_select_idx"): self.color_select_idx = 0
         self.player.ship_color_key = SHIP_COLORS[self.color_select_idx]["key"]
+        
+        # 3. 게임 엔진 상태 초기화
         self.dimension = "PHYSICAL"
         self.camera_offset = Vector2(-400,-300)
         self.abyss_active = False
@@ -370,22 +408,27 @@ class GameManager:
         self.bh_suck_timer  = 0
         self.bh_suck_target = None
         self.bh_flash_timer = 0
+        self.entropy = 0.0
+        
+        # 4. 균열(Rift) 및 특수 상태 초기화
         self.rift_active    = False
         self.rift_boss      = None
         self.rift_enemies.empty()
         self.rift_projectiles.empty()
         self.rift_ep.empty()
         self.rift_particles.clear()
-        self.form_select_active = False
         self.rift_boss_kill_count = 0
+        
+        # 5. 기타 타이머 및 카운터
         self.dive_spawn_timer = 0
         self.streak_flash_timer = 0
+        self.freeze_timer = 0
+        self.item_timer = 0
 
         for g in [self.enemies, self.projectiles, self.enemy_projectiles,
                   self.gems, self.structures, self.fluids, self.companions, self.allies, self.items]:
             g.empty()
         self.particles.clear()
-        self.freeze_timer = 0
 
         if "abyss" in ch.enemy_set or "3" == chapter_id:
             if "abyss_ship" not in self.player.unlocked_forms:
@@ -906,6 +949,12 @@ class GameManager:
     # ─────────────────────────────────────
     def update(self, events):
         self.mouse_pos = pygame.mouse.get_pos()
+        
+        #  스토리 인트로 업데이트
+        if self.state == "INTRO":
+            self._handle_intro_input(events)
+            return
+
         if self.freeze_timer > 0: self.freeze_timer -= 1
         if hasattr(self, "skill_combo_timer") and self.skill_combo_timer > 0:
             self.skill_combo_timer -= 1
@@ -969,34 +1018,6 @@ class GameManager:
                 self.reward_roulette_flash = 120
             return
 
-        if self.state == "COLOR_SELECT":
-            for event in events:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT:
-                        self.color_select_idx = (self.color_select_idx - 1) % len(SHIP_COLORS)
-                    elif event.key == pygame.K_RIGHT:
-                        self.color_select_idx = (self.color_select_idx + 1) % len(SHIP_COLORS)
-                    elif event.key == pygame.K_UP:
-                        self.color_select_idx = (self.color_select_idx - 4) % len(SHIP_COLORS)
-                    elif event.key == pygame.K_DOWN:
-                        self.color_select_idx = (self.color_select_idx + 4) % len(SHIP_COLORS)
-                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                        self._do_start_game(self.pending_chapter_id)
-                    elif event.key == pygame.K_ESCAPE:
-                        self.state = "MENU"
-                        self.color_select_active = False
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    mx, my = event.pos
-                    for i in range(len(SHIP_COLORS)):
-                        row = i // 4; ci = i % 4
-                        bx = 80 + ci * 165; by = 240 + row * 140
-                        card = pygame.Rect(bx, by, 150, 120)
-                        if card.collidepoint(mx, my):
-                            self.color_select_idx = i
-                            self._do_start_game(self.pending_chapter_id)
-                            break
-                            break
-            return
 
         if self.state == "SHOP":
             for event in events:
@@ -2175,19 +2196,13 @@ class GameManager:
     #  SHOP LOGIC
     # ─────────────────────────────────────
     def _handle_shop_input(self, event):
-        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS, JOB_DATA
+        from entities import PERSISTENT_UPGRADES, RUNESTONES, RUNESTONE_ORDER, JOB_DATA
         
         # 전체 리스트 동적 재구성 (draw_shop과 일치해야 함)
-        upgrades = [(k, v, False) for k, v in PERSISTENT_UPGRADES.items()]
-        active_skills = []
-        passive_skills = []
-        for k, v in ACTIVE_SKILLS.items():
-            if v.get("type") == "passive":
-                passive_skills.append((k, v, True))
-            else:
-                active_skills.append((k, v, True))
+        upgrades = [(k, v, "upg") for k, v in PERSISTENT_UPGRADES.items()]
+        runestones = [(k, RUNESTONES[k], "rune") for k in RUNESTONE_ORDER]
         
-        all_items = upgrades + active_skills + passive_skills
+        all_items = upgrades + runestones
         
         if self.shop_tab == 1:
             # 직업 마켓 전용 키 핸들링
@@ -2247,9 +2262,9 @@ class GameManager:
                 max_scroll = -max(0, rows * 68 - 380)
                 self.shop_scroll_y = max(max_scroll, self.shop_scroll_y - 200)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                sel_key, data, is_skill = all_items[self.shop_sel]
+                sel_key, data, itype = all_items[self.shop_sel]
                 
-                if not is_skill:
+                if itype == "upg":
                     upg = data
                     cur_lvl = self.upgrades.get(sel_key, 0)
                     cost = upg["cost"] * (cur_lvl + 1)
@@ -2269,13 +2284,14 @@ class GameManager:
                     else:
                         self.notify("최대 레벨 도달!", 100)
                 
-                else:
-                    skill = data
-                    cur_lvl = self.owned_skills.get(sel_key, 0)
+                elif itype == "rune":
+                    rune = data
+                    cur_lvl = self.owned_runestones.get(sel_key, 0)
                     
-                    if cur_lvl < skill["max_lvl"]:
-                        cost = skill["cost"] * (cur_lvl + 1)
-                        currency = skill.get("currency", "gold")
+                    if cur_lvl < rune["max_lvl"]:
+                        # 룬석 레벨업 비용: base_cost * (lvl + 1)
+                        cost = rune["base_cost"] * (cur_lvl + 1)
+                        currency = rune.get("currency", "gold")
                         
                         if (currency == "gold" and self.gold >= cost) or \
                            (currency == "diamond" and self.diamonds >= cost):
@@ -2284,41 +2300,20 @@ class GameManager:
                             else: 
                                 self.diamonds -= cost
                                 
-                            if cur_lvl == 0:
-                                self.owned_skills[sel_key] = 1
-                                # 자동 장착: 슬롯에 빈 자리가 있으면 장착
-                                if len(self.equipped_skills) < 6:
-                                    self.equipped_skills.append(sel_key)
-                                    self.notify(f"스킬 해금 + 장착: {skill['name']}!", 150)
-                                else:
-                                    self.notify(f"스킬 해금: {skill['name']}! (슬롯 꽉참 - [I]키로 관리)", 150)
-                                if self.player:
-                                    self.player.active_skills = list(self.equipped_skills)
-                            else:
-                                self.owned_skills[sel_key] += 1
-                                self.notify(f"스킬 레벨업: {skill['name']} Lv.{self.owned_skills[sel_key]}", 150)
+                            self.owned_runestones[sel_key] = cur_lvl + 1
+                            self._recalc_skills_from_runestones()
+                            self.notify(f"룬석 공명 강화: {rune['name']} Lv.{self.owned_runestones[sel_key]}", 150)
                             
                             self._save_data()
                         else:
                             self.notify(f"자원이 부족합니다! ({currency.upper()} 부족)", 100)
                     else:
-                        self.notify("최대 레벨 도달!", 100)
+                        self.notify("룬석이 최대 공명 상태입니다!", 100)
             
-            # ★ [E] 키: 스킬 장착/해제 토글
+            # ★ [E] 키: 룬석은 장착 기능 없음 (스킬은 자동 해금)
+            # 하지만 보유 스킬 관리 화면은 열 수 있음
             elif event.key == pygame.K_e:
-                sel_key, data, is_skill = all_items[self.shop_sel]
-                if is_skill and self.owned_skills.get(sel_key, 0) > 0:
-                    if sel_key in self.equipped_skills:
-                        self.equipped_skills.remove(sel_key)
-                        self.notify(f"스킬 해제: {data['name']}", 100)
-                    elif len(self.equipped_skills) < 6:
-                        self.equipped_skills.append(sel_key)
-                        self.notify(f"스킬 장착: {data['name']}!", 100)
-                    else:
-                        self.notify("슬롯이 꽉 찼습니다! 다른 스킬을 먼저 해제하세요.", 100)
-                    if self.player:
-                        self.player.active_skills = list(self.equipped_skills)
-                    self._save_data()
+                pass
             
             # ★ [I] 키: 스킬 관리 화면 토글
             elif event.key == pygame.K_i:
@@ -2818,19 +2813,13 @@ class GameManager:
         self._save_data()
 
     def _handle_shop_mouse(self, event):
-        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS
+        from entities import PERSISTENT_UPGRADES, RUNESTONES, RUNESTONE_ORDER
         
         # 동적 리스트 재구성
-        upgrades = [(k, v, False) for k, v in PERSISTENT_UPGRADES.items()]
-        active_skills_list = []
-        passive_skills_list = []
-        for k, v in ACTIVE_SKILLS.items():
-            if v.get("type") == "passive":
-                passive_skills_list.append((k, v, True))
-            else:
-                active_skills_list.append((k, v, True))
+        upgrades = [(k, v, "upg") for k, v in PERSISTENT_UPGRADES.items()]
+        runestones = [(k, RUNESTONES[k], "rune") for k in RUNESTONE_ORDER]
         
-        all_items = upgrades + active_skills_list + passive_skills_list
+        all_items = upgrades + runestones
         
         if event.type == pygame.MOUSEWHEEL:
             self.shop_scroll_y += event.y * 45 # 속도 약간 증가
@@ -2862,7 +2851,7 @@ class GameManager:
                 return
 
             curr_idx = 0
-            sections = [upgrades, active_skills_list, passive_skills_list]
+            sections = [upgrades, runestones]
             for items in sections:
                 y_cursor += 35 # 섹션 타이틀 공간
                 for i in range(0, len(items), 2):
@@ -3090,9 +3079,10 @@ class GameManager:
             shake = Vector2(random.uniform(-self.shake_amount, self.shake_amount),
                             random.uniform(-self.shake_amount, self.shake_amount))
         
-        if self.state == "MENU":
+        if self.state == "INTRO":
+            self._draw_intro()
+        elif self.state == "MENU":
             self._draw_menu()
-        elif self.state == "COLOR_SELECT": self._draw_color_select()
         elif self.state == "SHOP":         self._draw_shop()
         elif self.state == "PLAYING":
             if self.rift_active:
@@ -3119,6 +3109,56 @@ class GameManager:
             self._draw_settings()
             
         pygame.display.flip()
+
+    # ──────────────────────────────────────────────────────────
+    #  STORY INTRO SYSTEM
+    # ──────────────────────────────────────────────────────────
+    def _handle_intro_input(self, events):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_RIGHT):
+                    self.story_idx += 1
+                    if self.story_idx >= len(self.story_slides):
+                        self.state = "MENU"
+                elif event.key == pygame.K_ESCAPE:
+                    self.state = "MENU"
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    self.story_idx += 1
+                    if self.story_idx >= len(self.story_slides):
+                        self.state = "MENU"
+
+    def _draw_intro(self):
+        self.screen.fill((5, 5, 10))
+        
+        # 배경 효과 (흐르는 별빛)
+        t = pygame.time.get_ticks() * 0.001
+        for i in range(50):
+            x = (i * 123 + t * 50) % 800
+            y = (i * 456 + t * 20) % 600
+            pygame.draw.circle(self.screen, (40, 40, 60), (int(x), int(y)), 1)
+
+        slide = self.story_slides[self.story_idx]
+        
+        # 슬라이드 제목 (네온 효과)
+        title_color = slide["color"]
+        self.draw_text(slide["title"], (400, 180), 42, title_color, align="center")
+        
+        # 슬라이드 본문
+        lines = slide["text"].split("\n")
+        for i, line in enumerate(lines):
+            self.draw_text(line, (400, 280 + i * 40), 24, (200, 200, 220), align="center")
+            
+        # 하단 안내
+        footer_alpha = int(128 + 127 * math.sin(t * 4))
+        self.draw_text("PRESS [SPACE] OR CLICK TO NEXT", (400, 520), 16, (footer_alpha, footer_alpha, footer_alpha))
+        self.draw_text("[ESC] TO SKIP", (720, 560), 14, (80, 80, 100))
+        
+        # 진행률 표시 바
+        bar_w = 400
+        progress = (self.story_idx + 1) / len(self.story_slides)
+        pygame.draw.rect(self.screen, (30, 30, 50), (200, 480, bar_w, 4))
+        pygame.draw.rect(self.screen, title_color, (200, 480, int(bar_w * progress), 4))
 
     # ─────────────────────────────────────
     def _draw_menu(self):
@@ -3348,54 +3388,6 @@ class GameManager:
         # 메뉴 클릭 이벤트 보정 (main.py에서 직접 처리하므로 여기는 draw만)
 
     # ─────────────────────────────────────
-    def _draw_color_select(self):
-        self.screen.fill((6,6,16))
-        rng = random.Random(99)
-        for _ in range(120):
-            x=rng.randint(0,800); y=rng.randint(0,600); b=rng.randint(30,130)
-            pygame.draw.circle(self.screen, (b,b,b+50), (x,y), 1)
-        self.draw_text("우주선 색상 선택", (400,60), 38, (0,220,255))
-        ch_name = self.chapters.get(self.pending_chapter_id, list(self.chapters.values())[0]).name
-        self.draw_text(f"챕터: {ch_name}", (400,100), 20, (100,180,255))
-        self.draw_text("클릭 또는 방향키로 선택  ENTER/SPACE 확정  ESC 취소", (400,130), 15, (110,110,160))
-
-        mx, my = pygame.mouse.get_pos()
-        cols = 4
-        card_w, card_h = 150, 120
-        x_start = 80; y_start = 240; x_gap = 165; y_gap = 140
-
-        for i, cd in enumerate(SHIP_COLORS):
-            row = i // cols; ci = i % cols
-            bx = x_start + ci * x_gap; by = y_start + row * y_gap
-            card = pygame.Rect(bx, by, card_w, card_h)
-            sel  = (i == self.color_select_idx)
-            hov  = card.collidepoint(mx, my)
-            bg  = (40,30,65) if sel else ((28,28,48) if hov else (16,16,32))
-            bc  = (255,230,50) if sel else ((150,150,200) if hov else (60,60,100))
-            pygame.draw.rect(self.screen, bg, card, border_radius=10)
-            pygame.draw.rect(self.screen, bc, card, 2 if sel else 1, border_radius=10)
-            cx_c = bx + card_w // 2; cy_c = by + 52; scale = 16
-            poly = [(cx_c, cy_c - scale),(cx_c + scale, cy_c + scale),(cx_c - scale, cy_c + scale)]
-            col_p = cd["color_p"]; col_v = cd["color_v"]
-            pygame.draw.polygon(self.screen, col_p, poly)
-            pygame.draw.polygon(self.screen, (255,255,255), poly, 1)
-            poly_v = [(cx_c+26, cy_c - 8),(cx_c+38, cy_c + 8),(cx_c+14, cy_c + 8)]
-            pygame.draw.polygon(self.screen, col_v, poly_v)
-            self.draw_text(cd["name"], (cx_c, by + card_h - 24), 15,
-                           (255,230,50) if sel else (180,180,220))
-            self.draw_text("P" , (cx_c - 8, by + card_h - 8), 11, col_p)
-            self.draw_text("V" , (cx_c + 8, by + card_h - 8), 11, col_v)
-            if sel:
-                pygame.draw.rect(self.screen, (255,230,50), card, 3, border_radius=10)
-
-        sel_cd = SHIP_COLORS[self.color_select_idx]
-        preview_x, preview_y = 400, 555; big_scale = 28
-        big_poly = [(preview_x, preview_y - big_scale),
-                    (preview_x + big_scale, preview_y + big_scale),
-                    (preview_x - big_scale, preview_y + big_scale)]
-        pygame.draw.polygon(self.screen, sel_cd["color_p"], big_poly)
-        pygame.draw.polygon(self.screen, (255,255,255), big_poly, 1)
-        self.draw_text(f"선택: {sel_cd['name']}", (400, preview_y + big_scale + 14), 17, (255,230,80))
 
     # ─────────────────────────────────────
     def _draw_rift(self, shake):
@@ -3896,29 +3888,21 @@ class GameManager:
             self.screen.set_clip(None) # 클리핑 해제 필수
             return
 
-        from entities import PERSISTENT_UPGRADES, ACTIVE_SKILLS
+        from entities import PERSISTENT_UPGRADES, RUNESTONES, RUNESTONE_ORDER
         
         # 섹션 분류
-        upgrades = [(k, v, False) for k, v in PERSISTENT_UPGRADES.items()]
-        active_skills = []
-        passive_skills = []
-        for k, v in ACTIVE_SKILLS.items():
-            if v.get("type") == "passive":
-                passive_skills.append((k, v, True))
-            else:
-                active_skills.append((k, v, True))
+        upgrades = [(k, v, "upg") for k, v in PERSISTENT_UPGRADES.items()]
+        runestones = [(k, RUNESTONES[k], "rune") for k in RUNESTONE_ORDER]
         
-        #  섹션 아이콘 & 색상 정의 (액티브/패시브 시각적 분리 강화)
+        #  섹션 아이콘 & 색상 정의
         section_styles = {
-            "PERMANENT UPGRADES":   {"icon": "", "color": (255, 200, 80),  "line_col": (120, 80, 0),  "bg_tint": (30, 25, 10)},
-            "ACTIVE COMBAT SKILLS": {"icon": "", "color": (255, 80, 100),  "line_col": (150, 30, 50), "bg_tint": (35, 10, 15)},
-            "PASSIVE ABILITIES":    {"icon": "", "color": (80, 255, 180), "line_col": (0, 100, 60),  "bg_tint": (10, 30, 20)},
+            "PERMANENT UPGRADES":   {"icon": "⚡", "color": (255, 200, 80),  "line_col": (120, 80, 0),  "bg_tint": (30, 25, 10)},
+            "ANCIENT RUNESTONES":   {"icon": "💎", "color": (180, 100, 255), "line_col": (100, 40, 150), "bg_tint": (25, 10, 35)},
         }
         
         sections = [
             ("PERMANENT UPGRADES", upgrades),
-            ("ACTIVE COMBAT SKILLS", active_skills),
-            ("PASSIVE ABILITIES", passive_skills)
+            ("ANCIENT RUNESTONES", runestones),
         ]
         
         mx, my = pygame.mouse.get_pos()
@@ -3950,50 +3934,34 @@ class GameManager:
             for i in range(0, len(items), 2):
                 for j in range(2):
                     if i + j >= len(items): break
-                    ukey, data, is_skill = items[i+j]
+                    ukey, data, itype = items[i+j]
                     
-                    lvl = self.upgrades.get(ukey, 0) if not is_skill else self.owned_skills.get(ukey, 0)
+                    lvl = self.upgrades.get(ukey, 0) if itype == "upg" else self.owned_runestones.get(ukey, 0)
                     card = pygame.Rect(x_start + j * x_gap, y_cursor, cw, ch)
                     sel = (self.shop_sel == curr_idx); hov = card.collidepoint(mx, my)
                     
                     if hov and my > 145:
-                        hovered_item = (ukey, data, is_skill, lvl)
+                        hovered_item = (ukey, data, itype, lvl)
                     
                     #  카드 배경색 — 섹션별 틴트 적용
-                    if not is_skill:
+                    if itype == "upg":
                         bg = (50, 40, 15) if sel else ((30, 25, 8) if hov else (18, 15, 6))
                         bc = (255, 200, 60) if sel else ((160, 120, 40) if hov else (70, 55, 25))
-                    elif data.get("type") == "passive":
-                        bg = (15, 50, 35) if sel else ((10, 35, 22) if hov else (6, 20, 14))
-                        bc = (0, 255, 150) if sel else ((0, 180, 110) if hov else (0, 80, 50))
                     else:
-                        bg = (50, 15, 25) if sel else ((35, 10, 18) if hov else (22, 8, 12))
-                        bc = (255, 80, 120) if sel else ((200, 50, 80) if hov else (100, 25, 45))
+                        bg = (40, 15, 55) if sel else ((28, 10, 38) if hov else (18, 8, 25))
+                        bc = (180, 100, 255) if sel else ((130, 60, 180) if hov else (70, 30, 100))
 
                     pygame.draw.rect(self.screen, bg, card, border_radius=10)
                     pygame.draw.rect(self.screen, bc, card, 2 if sel else 1, border_radius=10)
 
                     icon_rect = pygame.Rect(card.left+8, card.top+8, 44, 44)
                     pygame.draw.rect(self.screen, (0,0,0,100), icon_rect, border_radius=5)
-                    if is_skill and data.get("type") == "passive":
-                        self.draw_text("P", (card.left+30, card.top+20), 14, (0, 255, 150))
-                    elif is_skill:
-                        self.draw_text("A", (card.left+30, card.top+20), 14, (255, 80, 100))
+                    if itype == "rune":
+                        self.draw_text("R", (card.left+30, card.top+29), 18, (180, 100, 255))
                     else:
-                        self.draw_text("U", (card.left+30, card.top+20), 14, (255, 200, 60))
-                    self.draw_text(f"LV.{lvl}", (card.left+30, card.top+38), 11, bc)
+                        self.draw_text("U", (card.left+30, card.top+29), 18, (255, 200, 60))
+                    self.draw_text(f"LV.{lvl}", (card.left+30, card.top+44), 10, bc)
                     
-                    # ★ 장착 상태 배지 (스킬만)
-                    if is_skill and lvl > 0:
-                        is_equipped = ukey in self.equipped_skills
-                        if is_equipped:
-                            eq_col = (0, 255, 120)
-                            pygame.draw.rect(self.screen, (0, 40, 20), (card.left+8, card.top+2, 44, 12), border_radius=3)
-                            self.draw_text("★장착", (card.left+30, card.top+8), 9, eq_col)
-                        else:
-                            eq_col = (120, 120, 140)
-                            pygame.draw.rect(self.screen, (20, 20, 30), (card.left+8, card.top+2, 44, 12), border_radius=3)
-                            self.draw_text("☆미장착", (card.left+30, card.top+8), 9, eq_col)
 
                     # 이름 + 간단 설명
                     self.draw_text(data["name"], (card.left + 60, card.top + 16), 15, (240, 240, 220), align="left")
@@ -4001,7 +3969,7 @@ class GameManager:
                     self.draw_text(desc_short, (card.left + 60, card.top + 35), 10, (140, 140, 160), align="left")
                     
                     # 가격
-                    base_cost = data["cost"]
+                    base_cost = data.get("cost", data.get("base_cost", 0))
                     current_cost = base_cost * (lvl + 1) if lvl < data["max_lvl"] else -1
                     if current_cost > 0:
                         currency = data.get("currency", "gold")
@@ -4023,8 +3991,8 @@ class GameManager:
 
         #  마우스 호버 시 상세 툴팁 표시
         if hovered_item:
-            ukey, data, is_skill, lvl = hovered_item
-            self._draw_shop_tooltip(mx, my, ukey, data, is_skill, lvl)
+            ukey, data, itype, lvl = hovered_item
+            self._draw_shop_tooltip(mx, my, ukey, data, itype, lvl)
 
         back_btn = pygame.Rect(220, 555, 160, 36); back_hov = back_btn.collidepoint(mx, my)
         pygame.draw.rect(self.screen, (40, 45, 75) if back_hov else (20, 25, 40), back_btn, border_radius=10)
@@ -4046,32 +4014,26 @@ class GameManager:
         if self.skill_manage_open:
             self._draw_skill_manage_overlay()
 
-    def _draw_shop_tooltip(self, mx, my, ukey, data, is_skill, lvl):
-        """ 마우스 호버 시 스킬/업그레이드의 상세 혜택을 표시하는 툴팁"""
-        tw, th = 320, 200
-        tx = mx + 20 if mx < 430 else mx - tw - 20
-        ty = my + 20 if my < 380 else my - th - 20
-        # 화면 밖으로 나가지 않도록 클램핑
+    def _draw_shop_tooltip(self, mx, my, ukey, data, itype, lvl):
+        """ 마우스 호버 시 룬석/업그레이드의 상세 혜택을 표시하는 툴팁"""
+        tw, th = 380, 240
+        tx = mx + 20 if mx < 400 else mx - tw - 20
+        ty = my + 20 if my < 340 else my - th - 20
         tx = max(5, min(795 - tw, tx))
         ty = max(5, min(595 - th, ty))
         
         t_rect = pygame.Rect(tx, ty, tw, th)
-        # 배경 (반투명 다크)
         try:
             bg_surf = pygame.Surface((tw, th), pygame.SRCALPHA)
             bg_surf.fill((8, 8, 20, 235))
             self.screen.blit(bg_surf, (tx, ty))
         except:
             pygame.draw.rect(self.screen, (8, 8, 20), t_rect, border_radius=12)
-        # 테두리 색 (타입에 따라 다름)
-        if is_skill and data.get("type") == "passive":
-            border_col = (0, 255, 150)
-            title_col  = (80, 255, 180)
-            type_label = "[패시브 스킬]"
-        elif is_skill:
-            border_col = (255, 80, 120)
-            title_col  = (255, 120, 150)
-            type_label = "[액티브 스킬]"
+            
+        if itype == "rune":
+            border_col = (180, 100, 255)
+            title_col  = (200, 150, 255)
+            type_label = "[고대 룬석]"
         else:
             border_col = (255, 200, 60)
             title_col  = (255, 220, 100)
@@ -4094,42 +4056,42 @@ class GameManager:
         pygame.draw.line(self.screen, (60, 60, 80), (tx + 10, ty + 72), (tx + tw - 10, ty + 72), 1)
         
         # ── 현재 레벨 효과 (Current)
-        cur_txt = self._get_skill_effect_text(ukey, data, is_skill, lvl)
-        self.draw_text(f" 현재 Lv.{lvl}: {cur_txt}", (tx + 15, ty + 88), 12, (180, 220, 255), align="left")
+        cur_txt = self._get_skill_effect_text(ukey, data, itype, lvl)
+        if len(cur_txt) > 48: cur_txt = cur_txt[:45] + "..."
+        self.draw_text(f" 현재 Lv.{lvl}: {cur_txt}", (tx + 15, ty + 88), 11, (180, 220, 255), align="left")
         
         # ── 다음 레벨 효과 (Next)
         if lvl < data["max_lvl"]:
-            next_txt = self._get_skill_effect_text(ukey, data, is_skill, lvl + 1)
-            self.draw_text(f"▷ 다음 Lv.{lvl+1}: {next_txt}", (tx + 15, ty + 108), 12, (0, 255, 180), align="left")
+            next_txt = self._get_skill_effect_text(ukey, data, itype, lvl + 1)
+            if len(next_txt) > 48: next_txt = next_txt[:45] + "..."
+            self.draw_text(f"▷ 다음 Lv.{lvl+1}: {next_txt}", (tx + 15, ty + 108), 11, (0, 255, 180), align="left")
             
             # 비용 정보
-            cost_next = data["cost"] * (lvl + 1)
+            base_cost = data.get("cost", data.get("base_cost", 0))
+            cost_next = base_cost * (lvl + 1)
             currency = data.get("currency", "gold")
             cur_icon = "G" if currency == "gold" else "D"
             has_enough = (currency == "gold" and self.gold >= cost_next) or (currency == "diamond" and self.diamonds >= cost_next)
             cost_col = (255, 230, 80) if has_enough else (255, 80, 80)
-            self.draw_text(f"업그레이드 비용: {cost_next}{cur_icon}", (tx + 15, ty + 132), 13, cost_col, align="left")
+            self.draw_text(f"공명 강화 비용: {cost_next}{cur_icon}", (tx + 15, ty + 135), 13, cost_col, align="left")
             
             if has_enough:
-                self.draw_text(" 클릭 또는 SPACE로 구매/강화", (tx + 15, ty + 152), 12, (255, 200, 50), align="left")
+                self.draw_text(" 클릭 또는 SPACE로 공명 강화", (tx + 15, ty + 158), 12, (255, 200, 50), align="left")
             else:
-                self.draw_text(f" {currency.upper()} 부족!", (tx + 15, ty + 152), 12, (255, 80, 80), align="left")
+                self.draw_text(f" {currency.upper()} 부족!", (tx + 15, ty + 158), 12, (255, 80, 80), align="left")
         else:
-            self.draw_text(" 최대 레벨 도달! 완전 최적화됨.", (tx + 15, ty + 108), 13, (255, 220, 100), align="left")
+            self.draw_text(" 최대 공명 도달! 룬의 모든 힘이 해방됨.", (tx + 15, ty + 108), 13, (255, 220, 100), align="left")
         
-        # 쿨타임 정보 (스킬인 경우)
-        if is_skill:
-            cd_sec = data.get("cd", 0) / 60
-            self.draw_text(f"재사용 대기: {cd_sec:.0f}초", (tx + 15, ty + 175), 11, (150, 150, 180), align="left")
-            max_lvl_txt = f"최대 강화: Lv.{data['max_lvl']}"
-            self.draw_text(max_lvl_txt, (tx + tw - 15, ty + 175), 11, (150, 150, 180), align="right")
+        # 추가 정보 (위치 조정)
+        self.draw_text(f"최대 레벨: Lv.{data['max_lvl']}", (tx + tw - 15, ty + th - 20), 10, (150, 150, 180), align="right")
+        if itype == "rune":
+            self.draw_text("룬석 강화 시 관련 스킬이 자동 해금/성장합니다", (tx + 15, ty + th - 20), 10, (140, 140, 160), align="left")
 
-    def _get_skill_effect_text(self, ukey, data, is_skill, lvl):
-        """주어진 레벨에서의 구체적인 스킬/업그레이드 효과 텍스트 반환"""
-        if lvl == 0:
-            return "미보유"
-        # 영구 업그레이드 효과
-        if not is_skill:
+    def _get_skill_effect_text(self, ukey, data, itype, lvl):
+        """주어진 레벨에서의 구체적인 효과 반환"""
+        if lvl == 0: return "미해금"
+        
+        if itype == "upg":
             if ukey == "shield_boost": return f"최대 쉴드 +{lvl*5}"
             elif ukey == "hp_boost":   return f"최대 HP +{lvl*10}"
             elif ukey == "speed_boost": return f"이동속도 +{lvl*3}%"
@@ -4137,22 +4099,17 @@ class GameManager:
             elif ukey == "dash_cdr":    return f"대쉬 쿨타임 -{lvl*5}%"
             elif ukey == "xp_bonus":    return f"경험치 +{lvl*5}%"
             return data["desc"]
-        # 스킬 효과
-        if ukey == "nova_blast":        return f"데미지 {20+lvl*15}, 범위 {300+lvl*20}"
-        elif ukey == "time_warp":       return f"지속 {2+lvl}초, 감속 {int((0.5-lvl*0.08)*100)}%"
-        elif ukey == "vampirism":       return f"지속 {(600+lvl*300)//60}초, 흡혈 {int((0.3+lvl*0.1)*100)}%"
-        elif ukey == "shield_overload": return f"쉴드 완충 + 공격력×1.5 ({(300+lvl*120)//60}초)"
-        elif ukey == "gravity_surge":   return f"블랙홀 반경 {90+lvl*15}, 흡입 {350+lvl*40}"
-        elif ukey == "stealth_cloak":   return f"은신 {(300+lvl*120)//60}초 + 속도 부스트"
-        elif ukey == "shadow_extraction":return f"그림자 병사 {3+lvl//2}명 소환"
-        elif ukey == "getsuga_tensho":  return f"데미지 {25+lvl*25}, 크기 {24+lvl*4}"
-        elif ukey == "infinite_void":   return f"빙결 {(300+lvl*120)//60}초, 데미지 {10+lvl*10}"
-        elif ukey == "titan_form":      return f"거인화 {(420+lvl*120)//60}초, 무적+짓밟기"
-        elif ukey == "thunder_spear":   return f"폭발 데미지 {60+lvl*40}, 크기 {20+lvl*2}"
-        elif ukey == "amaterasu":       return f"흑염 데미지 {100+lvl*150}, 범위 {150+lvl*20}"
-        elif ukey == "hollow_purple":   return f"소멸빔 데미지 {300+lvl*150}, 범위 {120+lvl*15}"
-        elif ukey == "gomu_gatling":    return f"5초간 난타, 데미지 {20+lvl*10}/타"
-        elif ukey == "izanagi":         return f"사망 시 부활 (HP {30+lvl*20})"
+        
+        if itype == "rune":
+            from entities import ACTIVE_SKILLS
+            unlocked = []
+            for req, skey in data["unlocks"].items():
+                if lvl >= req:
+                    sname = ACTIVE_SKILLS.get(skey, {}).get("name", skey)
+                    slvl = lvl - req + 1
+                    unlocked.append(f"{sname} Lv.{slvl}")
+            return " + ".join(unlocked) if unlocked else "능력 해방 준비 중"
+        
         return data["desc"]
 
     def _draw_skill_manage_overlay(self):
@@ -4286,6 +4243,32 @@ class GameManager:
         eq_n = len(self.equipped_skills)
         self.draw_text(f"장착 {eq_n}/6  |  ESC/I: 닫기  |  클릭으로 장착/해제", (400, 570), 14, (140, 160, 200))
 
+    def _recalc_skills_from_runestones(self):
+        from entities import RUNESTONES
+        # 룬석 레벨에 따라 보유 스킬 목록 및 레벨 재계산
+        old_owned = set(self.owned_skills.keys()) if hasattr(self, "owned_skills") else set()
+        self.owned_skills = {}
+        for rkey, lvl in self.owned_runestones.items():
+            if rkey not in RUNESTONES: continue
+            rune = RUNESTONES[rkey]
+            for req_lvl, skey in rune["unlocks"].items():
+                if lvl >= req_lvl:
+                    # 스킬 레벨 = 룬석 레벨 - 해금 레벨 + 1
+                    self.owned_skills[skey] = lvl - req_lvl + 1
+                    
+                    # ★ 자동 장착: 새로 해금된 스킬이 있고 슬롯에 여유가 있으면 장착
+                    if skey not in old_owned and skey not in self.equipped_skills:
+                        if len(self.equipped_skills) < 6:
+                            self.equipped_skills.append(skey)
+                            from entities import ACTIVE_SKILLS
+                            sname = ACTIVE_SKILLS.get(skey, {}).get("name", skey)
+                            self.notify(f"✨ 신규 스킬 해금 및 장착: {sname}!", 180)
+        
+        # 유효하지 않은 장착 스킬 제거 (보유 중인 스킬만 유지)
+        self.equipped_skills = [s for s in self.equipped_skills if s in self.owned_skills]
+        if self.player:
+            self.player.active_skills = list(self.equipped_skills)
+
     def _save_data(self):
         import json, os
         data = {
@@ -4293,7 +4276,7 @@ class GameManager:
             "diamonds": self.diamonds,
             "crystals": self.crystals,
             "upgrades": self.upgrades,
-            "owned_skills": self.owned_skills,
+            "owned_runestones": self.owned_runestones, # 룬석 데이터 저장
             "equipped_skills": self.equipped_skills,
             "last_roulette_time": self.last_roulette_time,
             "pilot_name": self.pilot_name,
@@ -4319,19 +4302,12 @@ class GameManager:
                     self.gold     = data.get("gold", 0)
                     self.diamonds = data.get("diamonds", 0)
                     self.crystals = data.get("crystals", 0)
-                    raw_skills = data.get("owned_skills", {})
-                    # 마이그레이션: 리스트 형태면 {이름: 1} 로 변환
-                    if isinstance(raw_skills, list):
-                        self.owned_skills = {k: 1 for k in raw_skills}
-                    else:
-                        self.owned_skills = raw_skills
+                    self.owned_runestones = data.get("owned_runestones", {"cosmic": 1})
+                    self._recalc_skills_from_runestones()
                     
-                    # ★ 장착 스킬 로드 (마이그레이션 지원)
+                    # ★ 장착 스킬 로드
                     raw_equipped = data.get("equipped_skills", None)
-                    if raw_equipped is None:
-                        # 이전 세이브: 보유 스킬 전부 장착 (최대 6개)
-                        self.equipped_skills = list(self.owned_skills.keys())[:6]
-                    else:
+                    if raw_equipped is not None:
                         # 유효한 스킬만 유지
                         self.equipped_skills = [s for s in raw_equipped if s in self.owned_skills]
                     
@@ -4348,9 +4324,6 @@ class GameManager:
                     self.played_job_chapter = data.get("played_job_chapter", False)
                     self.saved_job = data.get("player_job", None)
 
-                    # 로드 후 플레이어에게 장착된 스킬만 부여
-                    if self.player:
-                        self.player.active_skills = list(self.equipped_skills)
                     # 전직 데이터 복원
                     saved_job = data.get("player_job", None)
                     if saved_job and self.player:
@@ -4362,6 +4335,7 @@ class GameManager:
                         for k in self.player.job_stats:
                             if k in saved_js:
                                 self.player.job_stats[k] = saved_js[k]
+                        self.player.active_skills = list(self.equipped_skills)
             except: pass
 
     def _draw_hud(self, progress):
