@@ -3,7 +3,7 @@ import random
 import math
 from entities import (Player, Enemy, Projectile, EnemyProjectile, Gem,
                       Structure, Fluid, RobotCompanion, PickupItem,
-                      Particle, Blackhole, ShadowSoldier, Portal, WEAPONS, WEAPON_ORDER,
+                      Particle, Blackhole, ShadowSoldier, Portal, Planet, WEAPONS, WEAPON_ORDER,
                       WEAPON_UNLOCK_LEVEL, ENEMY_DATA, ITEM_DATA, SHIP_FORMS,
                       SHIP_COLORS, SETTINGS, JobShrine, JOB_TIER_DATA)
 from pygame.math import Vector2
@@ -198,68 +198,46 @@ class GameManager:
         self.owned_jobs = ["전사"]  # 보유 중인 직업 리스트
         self.owned_runestones = {"cosmic": 1} # 초기 룬석
 
-        #  심해 잠수 전용 상태
-        self.dive_spawn_timer = 0
+        # 행성 데이터 (Islands)
+        self.planets = pygame.sprite.Group()
+        self.current_planet = None
+        self.planet_spawn_timer = 0
+        self.weapon_drops = pygame.sprite.Group()
+        
+        # 행성 타입 템플릿 (기존 챕터 데이터를 행성 타입으로 전환)
+        self.planet_templates = {
+            "marine": {
+                "name": "해군 지부 행성", "mode": "SHIP", "friction": -0.05,
+                "bg_zones": [(0.0,(0,10,30)),(1.0,(40,0,80))],
+                "enemy_set": "marine", "special": ["marine_enemies"]
+            },
+            "desert": {
+                "name": "사막 행성 알라바스타", "mode": "HUMAN", "friction": -0.15,
+                "bg_zones": [(0.0,(100,50,20)),(1.0,(255,200,50))],
+                "enemy_set": "desert", "special": ["desert_enemies"]
+            },
+            "sky": {
+                "name": "하늘 행성 스카이피아", "mode": "SHIP", "friction": -0.03,
+                "bg_zones": [(0.0,(200,240,255)),(1.0,(100,150,255))],
+                "enemy_set": "sky", "special": ["sky_enemies"]
+            },
+            "samurai": {
+                "name": "사무라이 행성 와노쿠니", "mode": "HUMAN", "friction": -0.20,
+                "bg_zones": [(0.0,(40,10,10)),(1.0,(120,20,20))],
+                "enemy_set": "samurai", "special": ["samurai_enemies"]
+            },
+            "job": {
+                "name": "전직의 성소", "mode": "SHIP", "friction": -0.05,
+                "bg_zones": [(0.0,(80,0,150)),(1.0,(150,0,255))],
+                "enemy_set": "normal", "special": ["job_awakening"]
+            }
+        }
 
-        #  연속킬 streak 이펙트 타이머
-        self.streak_flash_timer = 0
-        self.streak_flash_count = 0
-
-        self.chapters = {
-            "0": Chapter(
-                "전직의 시련", "SHIP", -0.05,
-                [(0.0,(40,10,20)),(0.5,(120,10,40)),(1.0,(180,20,50))],
-                90, "심판의 전장 · 90초 생존 · 전직 자격 심사 · 재전직 가능",
-                enemy_set="abyss", special=["abyss_enemies", "mega_bosses"]
-            ),
-            "1": Chapter(
-                "섹터 제로: 궤도의 정적", "SHIP", -0.02,
-                [(0.0,(10,20,30)),(0.4,(5,30,60)),(0.7,(30,10,50)),(1.0,(60,5,20))],
-                3600, "무중력 전투 · 기초 훈련 · 스페이스 대쉬 · 시간 무제한",
-                enemy_set="normal",
-            ),
-            "2": Chapter(
-                "제9구역: 네온 유적", "HUMAN", -0.25,
-                [(0.0,(30,30,40)),(0.3,(40,25,35)),(0.6,(20,20,50)),(1.0,(50,10,10))],
-                3600, "폐허가 된 거대도시 · 보병 작전 · 높은 구조물 밀도",
-                enemy_set="normal",
-            ),
-            "3": Chapter(
-                "반타블랙 심해", "SHIP", -0.18,
-                [(0.0,(5,30,40)),(0.3,(0,50,60)),(0.6,(0,30,80)),(1.0,(0,10,60))],
-                3600, "심해 비행 · [Z] 잠수 · 수압 위험 · 네온 서펜트",
-                enemy_set="abyss", special=["toxic_fluid","abyss_enemies","deep_gravity","diving"],
-            ),
-            "4": Chapter(
-                "이벤트 호라이즌", "SHIP", -0.05,
-                [(0.0,(20,0,40)),(0.3,(40,0,60)),(0.6,(60,0,80)),(1.0,(80,0,100))],
-                3600, "공허의 균열 · 차원 대적자 · 빈번한 블랙홀 발생",
-                enemy_set="void", special=["frequent_blackhole","void_enemies"],
-            ),
-            "5": Chapter(
-                "싱귤래리티 코어", "SHIP", -0.05,
-                [(0.0,(40,10,20)),(0.3,(60,5,5)),(0.6,(10,10,60)),(1.0,(5,40,50))],
-                3600, "중력 우물 · 극한의 난이도 · 모든 적 출현",
-                enemy_set="all",
-            ),
-            "6": Chapter(
-                "최종 수렴점", "SHIP", -0.03,
-                [(0.0,(0,10,30)),(0.3,(0,5,50)),(0.7,(20,0,60)),(1.0,(40,0,80))],
-                3600, "승천한 심연 · 군주의 존재 · 블랙홀 지옥",
-                enemy_set="all", special=["frequent_blackhole","void_enemies","abyss_enemies","mega_bosses","diving"],
-            ),
-            "7": Chapter(
-                "직업 각성의 성소", "SHIP", -0.05,
-                [(0.0,(30,50,100)),(0.5,(50,100,180)),(1.0,(80,150,255))],
-                60, "전직의 기회 · 60초 생존 시 즉시 전직",
-                enemy_set="normal", special=["job_awakening"]
-            ),
-            "8": Chapter(
-                "승급의 투기장", "HUMAN", -0.15,
-                [(0.0,(100,20,20)),(0.5,(150,50,20)),(1.0,(255,100,0))],
-                120, "극한 전투 · 120초 생존 시 직업 티어 상승",
-                enemy_set="all", special=["tier_promotion", "frequent_blackhole"]
-            )
+        # 기본 우주 환경 (행성 밖)
+        self.space_environment = {
+            "name": "심연의 우주", "mode": "SHIP", "friction": -0.02,
+            "bg_zones": [(0.0,(5,5,10)),(1.0,(15,15,30))],
+            "enemy_set": "space", "special": ["space_hazards"]
         }
 
 
@@ -373,8 +351,8 @@ class GameManager:
 
 
     # ─────────────────────────────────────
-    def start_game(self, chapter_id):
-        self._do_start_game(chapter_id)
+    def start_game(self):
+        self._do_start_game()
 
     def _do_start_game(self, chapter_id):
         ch = self.chapters[chapter_id]
@@ -430,16 +408,16 @@ class GameManager:
             g.empty()
         self.particles.clear()
 
-        if "abyss" in ch.enemy_set or "3" == chapter_id:
+        if "abyss" in ch.get("enemy_set", ""):
             if "abyss_ship" not in self.player.unlocked_forms:
                 self.player.unlocked_forms.append("abyss_ship")
             self.player.morph_to("abyss_ship")
 
-        if ch.mode == "HUMAN":
+        if ch.get("mode") == "HUMAN":
             for _ in range(25):
                 wx = random.randint(-2500,2500); wy = random.randint(-2500,2500)
                 self.structures.add(Structure((wx,wy,random.randint(60,200),random.randint(60,200))))
-        if "toxic_fluid" in ch.special:
+        if "toxic_fluid" in ch.get("special", []):
             for _ in range(12):
                 fx = random.randint(-2000,2000); fy = random.randint(-2000,2000)
                 self.fluids.add(Fluid((fx,fy,280,160),(0,120,80,110)))
@@ -451,7 +429,7 @@ class GameManager:
         self.levelup_active = False
         self.item_timer     = 0
 
-        if "diving" in ch.special:
+        if "diving" in ch.get("special", []):
             self.notify("WASD이동  SPACE대쉬  SHIFT차원전환  F변형  [Z]심해잠수!", 260)
         else:
             self.notify("WASD 이동  SPACE 대쉬  SHIFT 차원전환  F 변형", 220)
@@ -501,9 +479,9 @@ class GameManager:
     #  BLACKHOLE SPAWN
     # ─────────────────────────────────────
     def _try_spawn_blackhole(self):
-        ch = self.current_chapter
+        ch = self.current_env
         base_prob = 0.003
-        if "frequent_blackhole" in ch.special:
+        if "frequent_blackhole" in ch.get("special", []):
             base_prob = 0.010
         if self.bh_spawn_cd > 0:
             self.bh_spawn_cd -= 1
@@ -656,7 +634,8 @@ class GameManager:
         self.rift_timer += 1
 
         friction = -0.18
-        self.player.update(keys, friction, self.current_chapter.mode, self.mouse_pos)
+        friction = self.current_env.get("friction", -0.05)
+        self.player.update(keys, friction, self.current_env.get("mode", "SHIP"), self.mouse_pos)
         self._update_camera()
 
         self.player.timer += 1
@@ -835,7 +814,7 @@ class GameManager:
 
     # ─────────────────────────────────────
     def _on_dimension_shift(self):
-        prob = 0.30 if "frequent_blackhole" in self.current_chapter.special else 0.15
+        prob = 0.30 if "frequent_blackhole" in self.current_env.get("special", []) else 0.15
         if random.random() < prob:
             self._force_spawn_blackhole()
         # ★ 차원 전환 시 비-보스 적 교체 (일부)
@@ -868,7 +847,7 @@ class GameManager:
         replaceable = [e for e in self.enemies if e.etype not in boss_types]
         replace_count = max(1, len(replaceable) * 4 // 10)  # 40% 교체
         
-        ch = self.current_chapter
+        ch = self.current_env
         abyss_pool = ["abyss_eel","depth_guardian","leviathan_eye","deep_angler"]
         void_pool  = ["null_fragment","void_titan","echo_phantom","glitcher"]
         normal_pool = ["basic_drone","swarm_organism","glitcher","hunter_drone",
@@ -877,9 +856,9 @@ class GameManager:
         
         if self.dimension == "VOID":
             pool = void_pool
-        elif ch.enemy_set == "abyss":
+        elif ch.get("enemy_set") == "abyss":
             pool = abyss_pool
-        elif ch.enemy_set == "all":
+        elif ch.get("enemy_set") == "all":
             pool = normal_pool + void_pool
         else:
             pool = normal_pool
@@ -1102,19 +1081,24 @@ class GameManager:
 
         keys = pygame.key.get_pressed()
         self.game_time += 1
+        
+        # 무한 우주 탐사 로직
+        self.planet_spawn_timer += 1
+        if self.planet_spawn_timer > 300: # 5초마다 체크
+            self._try_spawn_new_planet()
+            self.planet_spawn_timer = 0
+            
+        self._update_environment()
 
         # ★ 실존 우주 이론: 엔트로피 증가 (열적 죽음 가속)
         self.entropy = min(self.entropy_max, self.entropy + self.entropy_rate)
         
-        progress = min(1.0, self.game_time / (self.current_chapter.duration * 60))
-        # 레벨 보너스: 레벨당 0.4 증가 (완만한 난이도 상승)
-        level_bonus = (self.player.level - 1) * 0.4
-        # 후반부 폭증 커브
-        # 난이도 곡선 대폭 상향 (progress 계수 18.0 -> 25.0, 레벨 보너스 강화)
-        self.difficulty = 1.0 + (progress ** 1.2) * 25.0 + (level_bonus * 1.5)
+        # 난이도 곡선 (시간 기반 + 레벨 기반)
+        level_bonus = (self.player.level - 1) * 0.5
+        self.difficulty = 1.0 + (self.game_time / 36000.0) * 10.0 + level_bonus
 
         #  심해 잠수 키 처리 (Z키, diving 챕터 전용)
-        is_diving_chapter = "diving" in self.current_chapter.special
+        is_diving_chapter = "diving" in self.current_env.get("special", [])
         diving_key = keys[pygame.K_z]
         self.player.update_dive(diving_key, is_diving_chapter)
 
@@ -1210,20 +1194,21 @@ class GameManager:
                         self.notify("해금된 변형 없음. 레벨업 시 획득!", 100)
                 #  Z키 안내 알림
                 elif event.key == pygame.K_z and not is_diving_chapter:
-                    self.notify("이 챕터에서는 잠수 불가! (챕터3·6 전용)", 90)
+                    self.notify("이 구역에서는 잠수 불가! (특수 환경 전용)", 90)
 
         if self.settings_open:
             return
 
-        friction = self.current_chapter.friction
+        friction = self.current_env.get("friction", -0.05)
         buoyancy = 0
         for f in self.fluids:
             if f.get_world_rect().collidepoint(self.player.world_pos.x, self.player.world_pos.y):
                 friction *= 2; buoyancy = f.buoyancy
-        if "deep_gravity" in self.current_chapter.special:
+        if "deep_gravity" in self.current_env.get("special", []):
             buoyancy += 0.05
 
-        self.player.update(keys, friction, self.current_chapter.mode, self.mouse_pos)
+        friction = self.current_env.get("friction", -0.05)
+        self.player.update(keys, friction, self.current_env.get("mode", "SHIP"), self.mouse_pos)
         self.player.world_pos.y += buoyancy
 
         player_wr = pygame.Rect(self.player.world_pos.x-16, self.player.world_pos.y-16, 32,32)
@@ -1410,6 +1395,13 @@ class GameManager:
                             self.screen_shake(shake_pow, 8 if shake_pow==4 else 12)
                             self.gems.add(Gem(enemy.world_pos, enemy.gem_val))
                             if random.random() < 0.10: self._drop_item_at(enemy.world_pos)
+                            
+                            # 보스 무기 드롭 로직 (King Legacy 스타일)
+                            if getattr(enemy, "dropped_weapon", None):
+                                if random.random() < 0.4: # 40% 확률 드롭
+                                    self.weapon_drops.add(WeaponDrop(enemy.world_pos, enemy.dropped_weapon))
+                                    self.notify(f" ⚠ 보스의 전유물: {WEAPONS[enemy.dropped_weapon]['name']} 발견! ", 180)
+
                             combo = self.player.kill_combo()
                             mult  = self.player.get_combo_multiplier()
                             pts   = int(enemy.gem_val * 10 * mult)
@@ -1472,6 +1464,17 @@ class GameManager:
                 gem.kill()
 
 
+        # 무기 드롭 습득 로직
+        for wd in list(self.weapon_drops):
+            wd.update_screen_pos(self.camera_offset)
+            wd.update()
+            dist = (self.player.world_pos - wd.world_pos).length()
+            if dist < 45:
+                w_name = WEAPONS.get(wd.wkey, {}).get("name", "알 수 없는 무기")
+                self.player.owned_weapons[wd.wkey] = True
+                self.notify(f" ⚔ 전설의 무기 [{w_name}] 획득! ", 250)
+                wd.kill()
+
         for item in list(self.items):
             if not item.update():
                 item.kill(); continue
@@ -1491,79 +1494,8 @@ class GameManager:
             self.universe_timer = 0
             self._shift_universe()
 
-        if self.game_time > self.current_chapter.duration * 60:
-            if self.current_chapter == self.chapters.get("0"):
-                self.played_job_chapter = True
-                self._save_data()
-                if not self.job_select_active and not getattr(self.player, "job", None):
-                    self._trigger_job_select()
-                    return
-                if self.job_select_active:
-                    return # 전직 선택 화면 전개 대기
-                self.high_score = max(self.high_score, self.player.score)
-                self.state = "WIN"
-                return
-
-            if "job_awakening" in getattr(self.current_chapter, "special", []):
-                if not getattr(self.player, "_awaken_triggered", False):
-                    self.player.job = None
-                    self._trigger_job_select()
-                    self.player._awaken_triggered = True
-                    return
-                if self.job_select_active:
-                    return
-                self.high_score = max(self.high_score, self.player.score)
-                self.state = "WIN"
-                return
-
-            if "tier_promotion" in getattr(self.current_chapter, "special", []):
-                if not getattr(self.player, "_tier_promoted", False):
-                    if hasattr(self.player, "job") and self.player.job:
-                        self.player.job_tier = min(4, getattr(self.player, "job_tier", 0) + 1)
-                        self.notify(f"직업 승급! 현재 티어: {self.player.job_tier}", 200)
-                        self._save_data()
-                    self.player._tier_promoted = True
-                self.high_score = max(self.high_score, self.player.score)
-                self.state = "WIN"
-                return
-
-            final_bosses = ["void_god","abyss_sovereign","nexus_overmind","abyssal_tyrant"]
-            alive_finals = [e for e in self.enemies if e.etype in final_bosses]
-            if alive_finals:
-                self.game_time = self.current_chapter.duration * 60
-                if self.notify_timer <= 0:
-                    boss_name = alive_finals[0].name
-                    self.notify(f" {boss_name}를 처치해야 클리어! ", 240)
-                return
-            if "mega_bosses" in self.current_chapter.special:
-                for fb in ["void_god","abyss_sovereign"]:
-                    if not any(e.etype == fb for e in self.enemies):
-                        angle = random.uniform(0,360)
-                        sp = self.player.world_pos + Vector2(
-                            math.cos(math.radians(angle))*400,
-                            math.sin(math.radians(angle))*400)
-                        self.difficulty += 1.0
-                        self.enemies.add(Enemy(sp, "PHYSICAL", fb, self.difficulty))
-                        self.notify(f" {ENEMY_DATA[fb]['name']} 강제 출현! 처치하라! ", 300)
-                        self.screen_shake(25, 30)
-                        self.game_time = self.current_chapter.duration * 60
-                        return
-            else:
-                general_final = ["nexus_overmind","abyssal_tyrant"]
-                for fb in general_final:
-                    if not any(e.etype == fb for e in self.enemies):
-                        angle = random.uniform(0,360)
-                        sp = self.player.world_pos + Vector2(
-                            math.cos(math.radians(angle))*400,
-                            math.sin(math.radians(angle))*400)
-                        self.difficulty += 1.0
-                        self.enemies.add(Enemy(sp, "PHYSICAL", fb, self.difficulty))
-                        self.notify(f" {ENEMY_DATA[fb]['name']} 최후의 저항! 처치해야 클리어!", 300)
-                        self.screen_shake(20, 25)
-                        self.game_time = self.current_chapter.duration * 60
-                        return
-            self.high_score = max(self.high_score, self.player.score)
-            self.state = "WIN"
+        # 탐험 모드에서는 시간 종료 클리어가 없음 (무한 탐색)
+        pass
 
     def _shift_universe(self, target=None):
         old = self.universe_type
@@ -1838,12 +1770,12 @@ class GameManager:
         sp    = self.player.world_pos + Vector2(math.cos(math.radians(angle)),
                                                  math.sin(math.radians(angle))) * dist
         dim = random.choice(["PHYSICAL","VOID"])
-        ch  = self.current_chapter
+        ch = self.current_env
 
-        if "mega_bosses" in ch.special:
+        if "mega_bosses" in ch.get("special", []):
             mega = ["void_god","abyss_sovereign"]
             for mb in mega:
-                bp = ENEMY_DATA[mb]["spawn_progress"]
+                bp = ENEMY_DATA.get(mb, {}).get("spawn_progress", 0.9)
                 if progress >= bp and not any(e.etype==mb for e in self.enemies):
                     self.enemies.add(Enemy(sp, dim, mb, self.difficulty))
                     self.notify(f" {ENEMY_DATA[mb]['name']} 출현! ", 250)
@@ -1851,7 +1783,7 @@ class GameManager:
 
         boss_types = ["nexus_overmind","abyssal_tyrant"]
         for bt in boss_types:
-            bp = ENEMY_DATA[bt]["spawn_progress"]
+            bp = ENEMY_DATA.get(bt, {}).get("spawn_progress", 0.85)
             if progress >= bp and not any(e.etype==bt for e in self.enemies):
                 self.enemies.add(Enemy(sp, dim, bt, self.difficulty))
                 self.notify(f" {ENEMY_DATA[bt]['name']} 출현!", 200)
@@ -1860,38 +1792,33 @@ class GameManager:
         # 중간 보스는 레벨 10 이상에서만 등장
         if self.player.level >= 10:
             mid_bosses = [("echo_wraith",0.70),("dreadnought_construct",0.50),("anomaly_core",0.25)]
-            if ch.enemy_set == "abyss":
+            e_set = ch.get("enemy_set", "normal")
+            if e_set == "abyss":
                 mid_bosses = [("abyss_leviathan",0.55),("abyss_hydra",0.40),("anomaly_core",0.25)]
-            elif ch.enemy_set == "void":
-                mid_bosses = [("null_colossus",0.60),("echo_wraith",0.40)]
+            elif e_set == "samurai":
+                mid_bosses = [("samurai_general", 0.60)]
+            
             for mbt, mp in mid_bosses:
                 if progress >= mp and not any(e.etype==mbt for e in self.enemies):
                     self.enemies.add(Enemy(sp, dim, mbt, self.difficulty))
-                    self.notify(f" {ENEMY_DATA[mbt]['name']} 등장!", 160)
+                    self.notify(f" {ENEMY_DATA.get(mbt, {}).get('name', mbt)} 등장!", 160)
                     self.screen_shake(10,12); return
 
         abyss_pool = ["abyss_eel","depth_guardian","leviathan_eye","basic_drone","deep_angler"]
         void_pool  = ["null_fragment","void_titan","echo_phantom","glitcher"]
 
-        # 레벨 기반 일반 적 풀 (낮은 레벨엔 쉬운 적만)
+        # 레벨 기반 일반 적 풀
         lv = self.player.level
         if lv <= 2:
             normal_pool = ["basic_drone", "swarm_organism"]
         elif lv <= 4:
             normal_pool = ["basic_drone", "swarm_organism", "glitcher", "plasma_fly"]
         elif lv <= 7:
-            normal_pool = ["basic_drone", "swarm_organism", "glitcher",
-                           "hunter_drone", "null_fragment", "plasma_fly"]
+            normal_pool = ["basic_drone", "swarm_organism", "glitcher", "hunter_drone", "null_fragment", "plasma_fly"]
         elif lv <= 10:
-            normal_pool = ["glitcher", "hunter_drone", "null_fragment",
-                           "sentinel", "sniper_node", "shadow_lurker"]
-        elif lv <= 13:
-            normal_pool = ["hunter_drone", "sentinel", "sniper_node",
-                           "elite_enforcer", "void_weaver", "shadow_lurker", "void_stinger"]
+            normal_pool = ["glitcher", "hunter_drone", "null_fragment", "sentinel", "sniper_node", "shadow_lurker"]
         else:
-            normal_pool = ["basic_drone","swarm_organism","glitcher","hunter_drone",
-                           "sentinel","sniper_node","elite_enforcer","void_weaver",
-                           "corrupted_sentry","shadow_lurker"]
+            normal_pool = ["basic_drone","swarm_organism","glitcher","hunter_drone","sentinel","sniper_node","elite_enforcer","void_weaver"]
 
         # ★ 멀티버스 기반 풀 선정
         universe_p = {
@@ -1902,12 +1829,18 @@ class GameManager:
             "GLITCH": void_pool + ["glitcher", "corrupted_sentry", "shadow_lurker"]
         }.get(self.universe_type, normal_pool)
 
-        if ch.enemy_set == "abyss":
+        # 환경별 최종 풀 결정
+        env_set = ch.get("enemy_set", "normal")
+        if env_set == "marine":
+            pool = ["marine_soldier", "marine_officer", "marine_ship"]
+        elif env_set == "samurai":
+            pool = ["samurai_ronin", "samurai_general"]
+        elif env_set == "desert":
+            pool = ["desert_bandit", "sand_worm"]
+        elif env_set == "sky":
+            pool = ["sky_guardian", "storm_bird"]
+        elif env_set == "abyss":
             pool = list(set(universe_p + abyss_pool))
-        elif ch.enemy_set == "void":
-            pool = list(set(universe_p + void_pool))
-        elif ch.enemy_set == "all":
-            pool = list(set(normal_pool + abyss_pool + void_pool))
         else:
             pool = list(set(universe_p))
 
@@ -1918,7 +1851,7 @@ class GameManager:
         elif progress > 0.5 and r < 0.22:
             etype = random.choice(pool[len(pool)//2:] or pool or ["basic_drone"])
         elif r < 0.38:
-            sw = "swarm_organism" if ch.enemy_set not in ("abyss","void") else (pool[0] if pool else "basic_drone")
+            sw = "swarm_organism" if env_set not in ("abyss","void") else (pool[0] if pool else "basic_drone")
             for _ in range(5):
                 off = Vector2(random.uniform(-45,45), random.uniform(-45,45))
                 new_e = Enemy(sp+off, dim, sw, self.difficulty)
@@ -3184,96 +3117,43 @@ class GameManager:
         self.draw_text("PROTOCOL SELECTION PHASE", (400, 148), 12, (255, 180, 100))
 
 
-        mx, my = pygame.mouse.get_pos()
-        clist = []
-        # 모든 챕터를 ID 순서대로 수집
-        for cid in sorted(self.chapters.keys(), key=lambda x: int(x)):
-            clist.append((cid, self.chapters[cid]))
-
-
-        cols = 2
-        card_w, card_h = 360, 75
-        x_start, y_start = 35, 150
-        x_gap, y_gap = 375, 80
-
-
-
-        for i, (cid, ch) in enumerate(clist):
-            row = i // cols; ci = i % cols
-            card = pygame.Rect(x_start + ci * x_gap, y_start + row * y_gap, card_w, card_h)
-            cx, cy = card.centerx, card.centery
-            mx, my = pygame.mouse.get_pos()
-            hovered = card.collidepoint(mx,my)
-
-            # 재전직 카드 (챕터 0, 이미 완료한 경우) 특수 렌더링
-            if cid == "0" and getattr(self, "played_job_chapter", False):
-                pygame.draw.rect(self.screen, (20, 10, 40), card, border_radius=12)
-                pygame.draw.rect(self.screen, (140, 60, 255), card, 2, border_radius=12)
-                self.draw_text("재전직 (전직 재선택)", (card.centerx, card.centery - 18), 18, (200, 150, 255))
-                self.draw_text("5,000,000 G  또는  1,000 D", (card.centerx, card.centery + 8), 14, (255, 220, 100))
-                self.draw_text("[클릭하여 재도전]", (card.centerx, card.centery + 28), 11, (160, 120, 200))
-                continue
-
-            is_roulette_hi = self.roulette_active and (self.roulette_idx == i)
-            is_result      = (self.roulette_result == cid and self.roulette_flash > 0)
-
-            # --- 스타일 정의 (상점 테마 계승) ---
-            if is_result:
-                pulse   = int(40 + 40 * math.sin(self.roulette_flash * 0.25))
-                bg_col  = (pulse, pulse//2, 10)
-                bc      = (255, 220, 50)
-                bw_line = 3
-            elif is_roulette_hi:
-                bg_col  = (60, 50, 20)
-                bc      = (255, 180, 0)
-                bw_line = 3
-            elif hovered:
-                bg_col = (30, 35, 60); bc = (255, 255, 120); bw_line = 2
-            else:
-                bg_col = (12, 14, 28)
-                mode_col_base = (0, 200, 255) if ch.mode=="SHIP" else (0, 255, 150)
-                bc = mode_col_base; bw_line = 1
-
-            # 카드 배경 및 테두리
-            pygame.draw.rect(self.screen, bg_col, card, border_radius=12)
-            pygame.draw.rect(self.screen, bc, card, bw_line, border_radius=12)
-
-            # --- 결과 하이라이트 이펙트 ---
-            if is_result:
-                for si in range(8):
-                    sa = (self.game_time * 5 + si * 45) % 360
-                    sr = 45 + 5 * math.sin(self.game_time * 0.1)
-                    spx = cx + int(math.cos(math.radians(sa)) * sr)
-                    spy = cy + int(math.sin(math.radians(sa)) * sr)
-                    pygame.draw.circle(self.screen, (255,220,50), (spx,spy), 3)
-
-            # --- 좌측 아이콘 박스 (상점 스타일) ---
-            box_w = 60
-            box_rect = pygame.Rect(card.left + 10, card.top + 10, box_w, card_h - 20)
-            pygame.draw.rect(self.screen, (0, 0, 0, 100), box_rect, border_radius=8)
+        # --- 메인 시작 버튼 ---
+        start_btn = pygame.Rect(100, 180, 600, 100)
+        s_hov = start_btn.collidepoint(mx, my)
+        
+        # 네온 글로우 효과
+        for i in range(5):
+            pygame.draw.rect(self.screen, (255, 100, 0, 50 - i*10), start_btn.inflate(i*4, i*4), border_radius=15+i)
             
-            mode_char = "S" if ch.mode=="SHIP" else "H"
-            mode_col = (0, 200, 255) if ch.mode=="SHIP" else (0, 255, 150)
-            self.draw_text(mode_char, (box_rect.centerx, box_rect.top + 18), 20, mode_col)
-            self.draw_text(f"CH.{cid}", (box_rect.centerx, box_rect.top + 42), 11, (160, 160, 180))
+        s_bg = (40, 20, 10) if s_hov else (20, 10, 5)
+        pygame.draw.rect(self.screen, s_bg, start_btn, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 150, 50), start_btn, 2, border_radius=15)
+        
+        self.draw_text("UNIVERSE EXPLORATION", (400, 220), 36, (255, 220, 100))
+        self.draw_text("우주 대탐사 시작 (Open World)", (400, 255), 18, (255, 150, 50))
+        
+        # --- 정보 영역 (두 개의 큰 카드) ---
+        # 1. 룬석 시스템 정보
+        rune_card = pygame.Rect(100, 300, 290, 200)
+        pygame.draw.rect(self.screen, (15, 10, 30), rune_card, border_radius=12)
+        pygame.draw.rect(self.screen, (180, 100, 255), rune_card, 1, border_radius=12)
+        self.draw_text("ANCIENT RUNESTONES", (245, 330), 20, (180, 100, 255))
+        self.draw_text("강력한 룬석을 모아", (245, 365), 14, (200, 200, 220))
+        self.draw_text("비급 기술을 해금하십시오", (245, 385), 14, (200, 200, 220))
+        self.draw_text(f"보유 룬석: {len(self.owned_runestones)}종", (245, 430), 16, (255, 255, 255))
+        self.draw_text("[S] 룬석 상점", (245, 470), 14, (150, 100, 200))
 
-            # --- 텍스트 정보 (우측 정렬) ---
-            text_x = box_rect.right + 15
-            name_col = (255,220,50) if is_result else (255, 255, 255)
-            self.draw_text(ch.name, (text_x, cy - 14), 18, name_col, align="left")
-
-            
-            # 설명 (브리핑)
-            ov = ch.overview[:40] + ("..." if len(ch.overview) > 40 else "")
-            self.draw_text(ov, (text_x, cy + 10), 11, (140, 145, 170), align="left")
-            
-            # 모드 텍스트 배지
-            self.draw_text(ch.mode, (card.right - 10, card.top + 15), 10, mode_col, align="right")
-            
-            # 위험도 (별)
-            danger = i + 1
-            star_str = "★" * danger
-            self.draw_text(star_str, (card.right - 10, card.bottom - 15), 10, (255, 100, 50), align="right")
+        # 2. 행성/직업 시스템 정보
+        job_card = pygame.Rect(410, 300, 290, 200)
+        pygame.draw.rect(self.screen, (10, 25, 20), job_card, border_radius=12)
+        pygame.draw.rect(self.screen, (0, 255, 150), job_card, 1, border_radius=12)
+        self.draw_text("PLANETARY JOBS", (555, 330), 20, (0, 255, 150))
+        self.draw_text("행성을 탐험하며", (555, 365), 14, (200, 200, 220))
+        self.draw_text("최강의 직업을 쟁취하십시오", (555, 385), 14, (200, 200, 220))
+        
+        curr_job = self.saved_job or "무직"
+        self.draw_text(f"현재 직업: {curr_job}", (555, 430), 16, (255, 255, 255))
+        self.draw_text("[M] 직업 마켓", (555, 470), 14, (100, 200, 150))
 
         # 리워드 룰렛 UI
         self._draw_reward_roulette(mx, my)
@@ -3496,12 +3376,18 @@ class GameManager:
         self.draw_text(f"점수: {self.player.score:,}", (660,56), 14, (255,220,80))
         self.draw_text("보스 처치 시 탈출!", (400,580), 16, (200,100,255))
 
+    def _get_bg_at(self, progress, zones, void=False, abyss=False):
+        if void: return (25, 0, 50)
+        if abyss: return (0, 5, 15)
+        if not zones: return (10, 10, 25)
+        # 단순화된 존 보간 (첫 번째 존 색상 위주)
+        return zones[0][1]
+
     # ─────────────────────────────────────
     def _draw_playing(self, shake):
-        progress  = min(1.0, self.game_time / (self.current_chapter.duration * 60))
-        bg        = self.current_chapter.get_bg(progress,
-                                                 void=(self.dimension=="VOID"),
-                                                 abyss=self.abyss_active)
+        bg = self._get_bg_at(0.5, self.current_env.get("bg_zones", []),
+                             void=(self.dimension=="VOID"),
+                             abyss=self.abyss_active)
 
         #  잠수 중 배경 어두워짐
         if self.player.dive_active:
@@ -3734,7 +3620,7 @@ class GameManager:
             self._draw_abyss_bar()
 
         #  심해 잠수 UI (diving 챕터 전용)
-        if "diving" in self.current_chapter.special:
+        if "diving" in self.current_env.get("special", []):
             self._draw_dive_ui()
 
         if getattr(self, "form_select_active", False):
@@ -4374,13 +4260,13 @@ class GameManager:
             pygame.draw.rect(self.screen, (0, 180, 255), (sh_x, sh_y, int(sh_w * sh_ratio), sh_h))
         self.draw_text(f"보호 쉴드: {int(self.player.shield)}", (sh_x + sh_w//2, sh_y + sh_h//2), 11, (100, 220, 255))
 
-        # 5. MISSION STATS (TIME 제거됨)
-        timer_x = 570
-        # tl = max(0, self.current_chapter.duration - self.game_time//60)
-        # t_str = f"{tl//60:02d}:{tl%60:02d}"
-        # self.draw_text(t_str, (timer_x + 40, 31), 24, (255, 255, 100))
-        self.draw_text(f"G: {self.gold:,}  D: {self.diamonds:,}", (timer_x + 140, 20), 16, (255, 230, 80))
-        self.draw_text(f"점수: {self.player.score:,}", (timer_x + 140, 38), 13, (220, 220, 220))
+        # 5. MISSION STATS (LOCATION INFO)
+        timer_x = 560
+        env_name = self.current_env.get("name", "심연의 우주")
+        self.draw_text(f"📍 {env_name}", (timer_x + 60, 31), 18, (255, 255, 100))
+        
+        self.draw_text(f"G: {self.gold:,}  D: {self.diamonds:,}", (timer_x + 160, 20), 16, (255, 230, 80))
+        self.draw_text(f"점수: {self.player.score:,}", (timer_x + 160, 38), 13, (220, 220, 220))
         
         # 6. SKILL SLOT BAR (왼쪽 사이드 수직 슬롯 - 전투 UI 개선)
         from entities import ACTIVE_SKILLS
@@ -4973,7 +4859,7 @@ class GameManager:
         # 상단 헤더
         pygame.draw.line(self.screen, (0, 255, 150), (100, 160), (700, 160), 2)
         self.draw_text("MISSION STATUS: COMPLETE", (400, 135), 24, (0, 255, 180))
-        self.draw_text("챕터 클리어!", (400, 215), 58, (255, 255, 255))
+        self.draw_text("탐사 구역 정복!", (400, 215), 58, (255, 255, 255))
         
         if self.player:
             # 보상 박스

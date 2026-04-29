@@ -78,6 +78,9 @@ WEAPONS = {
     "abyss_beam":  {"name":"고압 버스트",  "cooldown":8, "speed":16,"dmg":2, "color_p":(0,80,200),   "color_v":(200,0,100),  "size":5, "spread":2,  "count":2},
     "shockwave":   {"name":"노바 임팩트", "cooldown":60,"speed":3, "dmg":8, "color_p":(255,180,0),  "color_v":(0,255,255),  "size":18,"spread":0,  "count":1},
     "spiral_laser":{"name":"네뷸라 스파이럴", "cooldown":10,"speed":13,"dmg":2, "color_p":(255,80,200), "color_v":(80,255,80),  "size":6, "spread":45, "count":4},
+    "thunder_spear": {"name":"천둥의 창", "cooldown":15,"speed":18,"dmg":5, "color_p":(255,255,100), "color_v":(255,255,255), "size":8, "spread":0, "count":1},
+    "void_blade":    {"name":"공허의 검", "cooldown":10,"speed":12,"dmg":6, "color_p":(150,0,255), "color_v":(0,0,0), "size":10, "spread":0, "count":1},
+    "omega_ray":     {"name":"오메가 레이", "cooldown":20,"speed":25,"dmg":10, "color_p":(255,255,255), "color_v":(255,0,0), "size":4, "spread":0, "count":1},
 }
 WEAPON_ORDER        = ["laser","shotgun","sniper","gatling","rocket","robot_arm","plasma","railgun","void_cannon","abyss_beam","shockwave","spiral_laser"]
 WEAPON_UNLOCK_LEVEL = [1,      3,        5,       8,        12,      16,         20,      25,       30,           35,          40,          45]
@@ -1274,6 +1277,18 @@ ENEMY_DATA = {
     "abyss_specter":   {"name":"심연 유령",     "hp":20.0,"speed":1.8,"size":32,"cp":(120,0,200),"cv":(80,0,140),  "shape":"circle", "behavior":"zigzag","gem":10, "special":"blink_dash"},
     "golden_golem":    {"name":"황금 골렘",     "hp":35.0,"speed":0.9,"size":40,"cp":(255,200,50),"cv":(200,150,0),"shape":"rect",   "behavior":"melee", "gem":22, "special":"armor"},
     "glitch_ghost":    {"name":"글리치 유령",   "hp":9.0, "speed":5.0,"size":24,"cp":(255,60,180),"cv":(200,0,140),"shape":"diamond","behavior":"zigzag","gem":7,  "special":"dash"},
+    # ── 행성 전용 적 (Island Enemies) ──
+    "marine_soldier":  {"name":"해군 병사",  "hp":6.0,  "speed":3.0, "size":24,"cp":(255,255,255),"cv":(200,200,255),"shape":"circle","behavior":"melee","gem":2},
+    "marine_officer":  {"name":"해군 장교",  "hp":15.0, "speed":2.5, "size":28,"cp":(0,50,150),  "cv":(50,100,255), "shape":"rect",  "behavior":"ranged","gem":5, "special":"ranged_shot"},
+    "marine_ship":     {"name":"해군 함선",  "hp":45.0, "speed":1.5, "size":45,"cp":(50,50,60),   "cv":(100,100,120),"shape":"rect",  "behavior":"ranged","gem":15, "special":"burst_shot"},
+    "samurai_ronin":   {"name":"떠돌이 무사","hp":12.0, "speed":4.0, "size":24,"cp":(150,50,50), "cv":(200,80,80),  "shape":"triangle","behavior":"zigzag","gem":4, "special":"dash"},
+    "samurai_general": {"name":"사무라이 장군","hp":110.0, "speed":2.0, "size":42,"cp":(100,0,0),   "cv":(150,20,20),  "shape":"rect",  "behavior":"melee","gem":25, "special":"armor", "dropped_weapon": "void_blade"},
+    "desert_bandit":   {"name":"사막 도적",  "hp":8.0,  "speed":3.8, "size":22,"cp":(210,180,100),"cv":(180,150,80), "shape":"triangle","behavior":"chase","gem":3},
+    "sand_worm":       {"name":"샌드 웜",    "hp":25.0, "speed":1.8, "size":35,"cp":(150,100,50), "cv":(100,70,30),  "shape":"circle","behavior":"melee","gem":12, "special":"gravity_vacuum"},
+    "sky_guardian":    {"name":"하늘 파수꾼","hp":18.0, "speed":3.5, "size":26,"cp":(200,240,255),"cv":(100,150,255),"shape":"diamond","behavior":"ranged","gem":10, "special":"ranged_shot"},
+    "storm_bird":      {"name":"뇌조",       "hp":10.0, "speed":5.5, "size":20,"cp":(255,255,100),"cv":(200,200,50), "shape":"triangle","behavior":"zigzag","gem":6,  "special":"dash_attack"},
+    "nexus_overmind":  {"name":"넥서스 오버마인드", "hp":400.0, "speed":1.0, "size":120, "cp":(0,255,255), "cv":(255,0,255), "shape":"circle", "behavior":"orbit", "gem":150, "special":"phase_boss", "dropped_weapon":"omega_ray"},
+    "abyssal_tyrant":  {"name":"심연의 폭군", "hp":500.0, "speed":0.8, "size":140, "cp":(50,0,100), "cv":(0,50,150), "shape":"rect", "behavior":"melee", "gem":200, "special":"phase_boss", "dropped_weapon":"thunder_spear"},
 }
 # ─────────────────────────────────────────
 #  JOB DATA (전직 시스템)
@@ -1439,6 +1454,75 @@ class JobShrine:
         return pygame.Rect(sx - 28, sy - 28, 56, 56)
 
 # ─────────────────────────────────────────
+#  PLANET (ISLANDS)
+# ─────────────────────────────────────────
+class Planet(pygame.sprite.Sprite):
+    def __init__(self, world_pos, ptype="marine", size=250):
+        super().__init__()
+        self.world_pos = Vector2(world_pos)
+        self.ptype = ptype
+        self.size = size
+        self.angle = 0
+        self.rotate_speed = random.uniform(0.01, 0.05)
+        
+        # 행성 타입별 색상 설정
+        self.data = {
+            "marine":  {"color": (0, 100, 255), "atmo": (100, 200, 255, 40), "name": "해군 지부 행성"},
+            "desert":  {"color": (210, 180, 100), "atmo": (255, 200, 50, 40), "name": "사막 행성 알라바스타"},
+            "sky":     {"color": (200, 240, 255), "atmo": (255, 255, 255, 60), "name": "하늘 행성 스카이피아"},
+            "samurai": {"color": (80, 20, 20), "atmo": (200, 50, 50, 40), "name": "사무라이 행성 와노쿠니"},
+            "job":     {"color": (150, 0, 255), "atmo": (200, 100, 255, 50), "name": "전직의 성소"},
+        }.get(ptype, {"color": (100, 100, 100), "atmo": (150, 150, 150, 30), "name": "미개척 행성"})
+
+        self.image = pygame.Surface((size*2 + 40, size*2 + 40), pygame.SRCALPHA)
+        self.rect = self.image.get_rect()
+        self._draw()
+
+    def _draw(self):
+        self.image.fill((0,0,0,0))
+        c = self.world_pos
+        center = (self.size + 20, self.size + 20)
+        
+        # 1. 대기권 (Atmosphere)
+        atmo_col = self.data["atmo"]
+        pygame.draw.circle(self.image, atmo_col, center, self.size + 15)
+        
+        # 2. 행성 본체
+        base_col = self.data["color"]
+        pygame.draw.circle(self.image, base_col, center, self.size)
+        
+        # 3. 디테일 (크레이터/구름 등)
+        for i in range(5):
+            angle = math.radians(i * 72)
+            ox = int(math.cos(angle) * (self.size * 0.6))
+            oy = int(math.sin(angle) * (self.size * 0.6))
+            pygame.draw.circle(self.image, (max(0, base_col[0]-40), max(0, base_col[1]-40), max(0, base_col[2]-40), 100), 
+                               (center[0]+ox, center[1]+oy), self.size // 4)
+
+    def update(self):
+        self.angle += self.rotate_speed
+
+    def update_screen_pos(self, camera_offset):
+        sx = int(self.world_pos.x - camera_offset.x)
+        sy = int(self.world_pos.y - camera_offset.y)
+        self.rect.center = (sx, sy)
+
+    def draw(self, surface, camera_offset):
+        self.update_screen_pos(camera_offset)
+        # 화면 밖이면 그리지 않음
+        if not surface.get_rect().colliderect(self.rect.inflate(100, 100)):
+            return
+        surface.blit(self.image, self.rect)
+        
+        # 행성 이름 텍스트 표시 (가까이 가면 보임)
+        dist = (self.world_pos - (camera_offset + Vector2(400, 300))).length()
+        if dist < 1200:
+            alpha = max(0, min(255, int(255 * (1 - (dist - 400) / 800))))
+            # 텍스트는 엔진에서 렌더링하도록 하거나 여기서 임시로 그림
+            pass
+
+
+# ─────────────────────────────────────────
 #  COMBAT OVERHAUL: WEAK POINT
 # ─────────────────────────────────────────
 class WeakPoint:
@@ -1495,6 +1579,7 @@ class Enemy(pygame.sprite.Sprite):
         #  Echo Shot 히스토리 추적 (COMBAT OVERHAUL TYPE-1)
         self.pos_history = []
         self.multiverse_type = "PRIME"
+        self.dropped_weapon = data.get("dropped_weapon", None)
 
         # 유니버스 인챈트 시스템
         self.enchant = None  # "overcharged"|"shadowed"|"gilded"|"glitched"

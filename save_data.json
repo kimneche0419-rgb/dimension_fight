@@ -1,5 +1,5 @@
 {
-    "gold": 10142,
+    "gold": 12142,
     "diamonds": 989567,
     "crystals": 51,
     "upgrades": {
@@ -21,7 +21,7 @@
         "vampirism",
         "shield_overload"
     ],
-    "last_roulette_time": 1777292220.2362373,
+    "last_roulette_time": 1777458555.0262873,
     "pilot_name": "KIM",
     "pilot_rank": "COMMANDER",
     "pilot_callsign": "RAVEN-01",
@@ -32,5 +32,8 @@
         "\uc804\uc0ac",
         "\ud761\ud608\uadc0"
     ],
-    "job_stats": {}
+    "job_stats": {},
+    "unlocked_weapons": [
+        "laser"
+    ]
 }
