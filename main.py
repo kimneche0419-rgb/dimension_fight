@@ -15,7 +15,7 @@ async def main():
     while running:
         events = pygame.event.get()
         # 마우스 가시성 관리
-        pygame.mouse.set_visible(gm.state in ("MENU", "SHOP", "COLOR_SELECT"))
+        pygame.mouse.set_visible(gm.state in ("MENU", "SHOP"))
 
         for event in events:
             if event.type == pygame.QUIT:
