@@ -102,6 +102,9 @@ public:
     // ── Job Shop ──
     int jobShopSel = 0;
 
+    // ── Ship Shop ──
+    int shipShopSel = 0;
+
     // ── Job Select Overlay ──
     bool jobSelectActive = false;
     int jobSelectTimer = 0;
@@ -145,6 +148,19 @@ public:
         totalGold = saveData.gold;
         totalDiamonds = saveData.diamonds;
 
+        // Auto-login if session exists
+        std::string savedUser, savedPass;
+        if (netClient.loadSession(savedUser, savedPass)) {
+            SDL_Log("Found active login session. Attempting auto-login for user: %s", savedUser.c_str());
+            if (netClient.loginUser(savedUser, savedPass, saveData, serverIP)) {
+                totalGold = saveData.gold;
+                totalDiamonds = saveData.diamonds;
+                SDL_Log("Auto-login on startup succeeded!");
+            } else {
+                SDL_Log("Auto-login on startup failed.");
+            }
+        }
+
         fpsTimer = SDL_GetTicks();
         return true;
     }
@@ -172,6 +188,26 @@ public:
         player.maxHealth += saveData.upgrades[2] * 10;
         player.health = player.maxHealth;
         player.dmgMult = 1.0f + saveData.upgrades[5] * 0.10f;
+
+        // Apply equipped ship bonuses
+        {
+            auto& ships = getShipTypes();
+            for (auto& s : ships) {
+                if (std::string(s.key) == saveData.equipped_ship) {
+                    auto it = saveData.ship_levels.find(s.key);
+                    int lvl = (it != saveData.ship_levels.end()) ? it->second : 0;
+                    if (lvl > 0) {
+                        player.maxHealth  += s.hp_per_lvl * lvl;
+                        player.maxShield  += s.shield_per_lvl * lvl;
+                        player.health      = player.maxHealth;
+                        player.shield      = player.maxShield;
+                        player.dmgMult    *= (1.0f + s.dmg_pct_per_lvl * lvl * 0.01f);
+                        player.speedMult  *= (1.0f + s.speed_pct_per_lvl * lvl * 0.01f);
+                    }
+                    break;
+                }
+            }
+        }
 
         enemies.clear();
         projectiles.clear();
@@ -293,6 +329,7 @@ public:
             case GameState::GACHA: stateStr = "GACHA"; break;
             case GameState::CRAFTING: stateStr = "CRAFTING"; break;
             case GameState::JOB_SHOP: stateStr = "JOB_SHOP"; break;
+            case GameState::SHIP_SHOP: stateStr = "SHIP_SHOP"; break;
             default: stateStr = "MENU"; break;
         }
         bool hasBoss = false;
@@ -318,6 +355,7 @@ public:
             case GameState::GACHA: handleGachaEvent(e); break;
             case GameState::CRAFTING: handleCraftingEvent(e); break;
             case GameState::JOB_SHOP: handleJobShopEvent(e); break;
+            case GameState::SHIP_SHOP: handleShipShopEvent(e); break;
             case GameState::MULTIPLAYER_LOBBY: handleMultiplayerLobbyEvent(e); break;
             case GameState::DEATH:
             case GameState::WIN:
@@ -342,8 +380,13 @@ public:
                 case SDL_SCANCODE_DOWN:
                     menuSel = (menuSel + 1) % numChapters; break;
                 case SDL_SCANCODE_RETURN: case SDL_SCANCODE_SPACE:
-                    state = GameState::COLOR_SELECT;
-                    colorSelectIdx = 0;
+                    if (menuSel > saveData.max_unlocked_chapter - 1) {
+                        sound.playSFX("hit");
+                        notify("🔒 이전 챕터를 먼저 클리어하세요!", 120);
+                    } else {
+                        state = GameState::COLOR_SELECT;
+                        colorSelectIdx = 0;
+                    }
                     break;
                 case SDL_SCANCODE_S:
                     state = GameState::SHOP;
@@ -363,10 +406,30 @@ public:
                     gachaTab = "뽑기";
                     gachaScrollY = 0;
                     break;
+                case SDL_SCANCODE_V:
+                    state = GameState::SHIP_SHOP;
+                    shipShopSel = 0;
+                    break;
                 case SDL_SCANCODE_M:
                     state = GameState::MULTIPLAYER_LOBBY;
                     mpStatus = "서버 연결 대기 중...";
-                    SDL_StartTextInput();
+                    SDL_StopTextInput();
+                    {
+                        std::string savedUser, savedPass;
+                        if (netClient.loadSession(savedUser, savedPass)) {
+                            mpStatus = "자동 로그인 중 (Auto-logging in)...";
+                            if (netClient.loginUser(savedUser, savedPass, saveData, serverIP)) {
+                                mpStatus = "자동 로그인 성공!";
+                                totalGold = saveData.gold;
+                                totalDiamonds = saveData.diamonds;
+                            } else {
+                                mpStatus = "자동 로그인 실패. 직접 로그인해 주세요.";
+                                SDL_StartTextInput();
+                            }
+                        } else {
+                            SDL_StartTextInput();
+                        }
+                    }
                     break;
                 default: break;
             }
@@ -378,8 +441,13 @@ public:
                 if (mouseScreen.x >= 200 && mouseScreen.x <= 600 &&
                     mouseScreen.y >= by && mouseScreen.y <= by + 45) {
                     menuSel = i;
-                    state = GameState::COLOR_SELECT;
-                    colorSelectIdx = 0;
+                    if (i > saveData.max_unlocked_chapter - 1) {
+                        sound.playSFX("hit");
+                        notify("🔒 이전 챕터를 먼저 클리어하세요!", 120);
+                    } else {
+                        state = GameState::COLOR_SELECT;
+                        colorSelectIdx = 0;
+                    }
                 }
             }
         }
@@ -606,6 +674,9 @@ public:
                 jobSelectedThisChapter = false;
             }
             state = GameState::WIN;
+            if (chapterIdx + 1 >= saveData.max_unlocked_chapter) {
+                saveData.max_unlocked_chapter = std::min(chapterIdx + 2, (int)chapters.size());
+            }
             grantDeathRewards();
             return;
         }
@@ -1033,6 +1104,7 @@ public:
             case GameState::GACHA: drawGacha(); break;
             case GameState::CRAFTING: drawCrafting(); break;
             case GameState::JOB_SHOP: drawJobShop(); break;
+            case GameState::SHIP_SHOP: drawShipShop(); break;
             case GameState::MULTIPLAYER_LOBBY: drawMultiplayerLobby(); break;
             default: drawMenu(); break;
         }
@@ -1058,21 +1130,35 @@ public:
         for (int i = 0; i < (int)chapters.size(); i++) {
             int by = 200 + i * 55;
             bool selected = (i == menuSel);
-            Color bgCol = selected ? Color(60, 40, 100, 200) : Color(20, 15, 40, 180);
-            Color textCol = selected ? Color(255, 220, 100) : Color(180, 180, 200);
-            Color descCol = selected ? Color(200, 180, 150) : Color(120, 120, 140);
+            bool locked = (i > saveData.max_unlocked_chapter - 1);
+            Color bgCol = selected ? (locked ? Color(40, 30, 50, 150) : Color(60, 40, 100, 200)) 
+                                   : (locked ? Color(15, 10, 20, 130) : Color(20, 15, 40, 180));
+            Color textCol = selected ? (locked ? Color(160, 160, 170) : Color(255, 220, 100)) 
+                                     : (locked ? Color(100, 100, 110) : Color(180, 180, 200));
+            Color descCol = selected ? (locked ? Color(120, 120, 130) : Color(200, 180, 150)) 
+                                     : (locked ? Color(70, 70, 80) : Color(120, 120, 140));
 
             drawRect(ren, 200, by, 400, 45, bgCol);
             if (selected) {
-                SDL_SetRenderDrawColor(ren, 255, 180, 50, 200);
+                if (locked) {
+                    SDL_SetRenderDrawColor(ren, 120, 120, 130, 150);
+                } else {
+                    SDL_SetRenderDrawColor(ren, 255, 180, 50, 200);
+                }
                 SDL_Rect border = {200, by, 400, 45};
                 SDL_RenderDrawRect(ren, &border);
             }
 
             char buf[128];
-            snprintf(buf, sizeof(buf), "CH.%s  %s", chapters[i].id, chapters[i].name);
-            ui.drawText(buf, 400, by + 15, 18, textCol);
-            ui.drawText(chapters[i].desc, 400, by + 34, 11, descCol);
+            if (locked) {
+                snprintf(buf, sizeof(buf), "CH.%s  %s [🔒 잠김]", chapters[i].id, chapters[i].name);
+                ui.drawText(buf, 400, by + 15, 18, textCol);
+                ui.drawText("이전 챕터를 먼저 클리어하세요", 400, by + 34, 11, descCol);
+            } else {
+                snprintf(buf, sizeof(buf), "CH.%s  %s", chapters[i].id, chapters[i].name);
+                ui.drawText(buf, 400, by + 15, 18, textCol);
+                ui.drawText(chapters[i].desc, 400, by + 34, 11, descCol);
+            }
         }
 
         // Stats
@@ -1081,7 +1167,7 @@ public:
                  totalGold, totalDiamonds, saveData.highScore);
         ui.drawText(statBuf, SCREEN_W / 2, SCREEN_H - 40, 14, Color(200, 200, 150));
 
-        ui.drawText("ENTER: Select  |  Arrow Keys: Navigate  |  M: Multiplayer & DB", SCREEN_W / 2,
+        ui.drawText("ENTER: Select  |  S: Shop  |  J: Job  |  V: Ship  |  G: Gacha  |  M: Multi", SCREEN_W / 2,
                     SCREEN_H - 15, 12, Color(120, 120, 150));
     }
 
@@ -3107,6 +3193,237 @@ public:
         }
     }
 
+    // ── Ship Shop UI & Event Handlers ──
+    void drawShipShop() {
+        SDL_SetRenderDrawColor(ren, 5, 8, 20, 255);
+        SDL_RenderClear(ren);
+        starField.draw(ren, Vec2(menuAnimTimer * 0.08f, menuAnimTimer * 0.04f), Dimension::VOID_DIM);
+
+        ui.drawText("VESSEL COMMAND CENTER", SCREEN_W / 2, 40, 26, Color(100, 200, 255));
+        ui.drawText("전함을 구매하고 레벨업하여 전투력을 강화하세요", SCREEN_W / 2, 75, 13, Color(80, 160, 220));
+
+        // Resource bar
+        ui.drawRectWithBorder(80, 93, 640, 28, Color(10, 20, 40), Color(60, 100, 160), 1);
+        char resBuf[128];
+        snprintf(resBuf, sizeof(resBuf), "Gold: %d G   |   Diamonds: %d D   |   심해핵: %d",
+                 totalGold, totalDiamonds, saveData.abyss_pearls);
+        ui.drawText(resBuf, SCREEN_W / 2, 107, 11, Color(180, 230, 255), "center");
+
+        auto& ships = getShipTypes();
+        int numShips = (int)ships.size();
+        int cardW = 220, cardH = 200;
+        int cols = 3;
+        int startX = 40, startY = 135, gapX = 240, gapY = 215;
+
+        for (int i = 0; i < numShips; i++) {
+            auto& s = ships[i];
+            int col = i % cols, row = i / cols;
+            int cx = startX + col * gapX;
+            int cy = startY + row * gapY;
+
+            int lvl = 0;
+            auto it = saveData.ship_levels.find(s.key);
+            if (it != saveData.ship_levels.end()) lvl = it->second;
+            bool owned = (lvl > 0);
+            bool equipped = (saveData.equipped_ship == std::string(s.key));
+            bool sel = (shipShopSel == i);
+            bool hov = (mouseScreen.x >= cx && mouseScreen.x <= cx + cardW &&
+                        mouseScreen.y >= cy && mouseScreen.y <= cy + cardH);
+
+            Color bgCol = equipped ? Color(20, 40, 80, 220)
+                        : sel ? Color(20, 30, 50, 200)
+                        : hov ? Color(15, 25, 40, 200)
+                        : Color(8, 12, 25, 200);
+            Color borderCol = equipped ? Color(100, 200, 255)
+                            : sel ? Color(80, 140, 220)
+                            : owned ? Color(60, 100, 160)
+                            : Color(40, 60, 100);
+
+            ui.drawRectWithBorder(cx, cy, cardW, cardH, bgCol, borderCol, sel ? 2 : 1);
+
+            // Ship icon (colored circle)
+            drawFilledCircle(ren, cx + 35, cy + 40, 22, s.color);
+            drawFilledCircle(ren, cx + 35, cy + 40, 12, s.accent);
+            if (equipped) {
+                drawFilledCircle(ren, cx + 35, cy + 40, 26, Color(100, 200, 255, 60));
+                ui.drawText("장착중", cx + 35, cy + 68, 9, Color(100, 200, 255), "center");
+            }
+
+            // Ship name & level
+            ui.drawText(s.name_ko, cx + 70, cy + 20, 15, owned ? Color(220, 240, 255) : Color(120, 140, 180), "left");
+            if (owned) {
+                char lvlBuf[32];
+                snprintf(lvlBuf, sizeof(lvlBuf), "Lv.%d / %d", lvl, s.max_level);
+                ui.drawText(lvlBuf, cx + 70, cy + 38, 11, Color(100, 200, 255), "left");
+            } else {
+                ui.drawText("미보유", cx + 70, cy + 38, 11, Color(150, 100, 100), "left");
+            }
+
+            // Description
+            ui.drawText(s.desc, cx + 8, cy + 70, 9, Color(140, 160, 180), "left");
+
+            // Stats per level
+            char statBuf[128];
+            int statY = cy + 86;
+            if (s.hp_per_lvl > 0) {
+                snprintf(statBuf, sizeof(statBuf), "HP +%d/lv", s.hp_per_lvl);
+                ui.drawText(statBuf, cx + 8, statY, 9, Color(100, 255, 120), "left"); statY += 13;
+            }
+            if (s.shield_per_lvl > 0) {
+                snprintf(statBuf, sizeof(statBuf), "Shield +%d/lv", s.shield_per_lvl);
+                ui.drawText(statBuf, cx + 8, statY, 9, Color(80, 180, 255), "left"); statY += 13;
+            }
+            if (s.dmg_pct_per_lvl > 0) {
+                snprintf(statBuf, sizeof(statBuf), "DMG +%d%%/lv", s.dmg_pct_per_lvl);
+                ui.drawText(statBuf, cx + 8, statY, 9, Color(255, 160, 80), "left"); statY += 13;
+            }
+            if (s.speed_pct_per_lvl > 0) {
+                snprintf(statBuf, sizeof(statBuf), "Speed +%d%%/lv", s.speed_pct_per_lvl);
+                ui.drawText(statBuf, cx + 8, statY, 9, Color(180, 255, 100), "left"); statY += 13;
+            }
+
+            // Buy / Upgrade button area
+            int btnY = cy + cardH - 42;
+            if (!owned) {
+                // Buy button
+                bool canBuy = (s.buy_gold == 0 || totalGold >= s.buy_gold) &&
+                              (s.buy_diamond == 0 || totalDiamonds >= s.buy_diamond) &&
+                              (s.buy_pearl == 0 || saveData.abyss_pearls >= s.buy_pearl);
+                Color btnBg = canBuy ? Color(20, 80, 160) : Color(40, 30, 30);
+                Color btnBd = canBuy ? Color(80, 160, 255) : Color(100, 60, 60);
+                ui.drawRectWithBorder(cx + 5, btnY, cardW - 10, 34, btnBg, btnBd, 1);
+
+                std::string costStr = "구매: ";
+                if (s.buy_gold > 0)    costStr += std::to_string(s.buy_gold) + "G ";
+                if (s.buy_diamond > 0) costStr += std::to_string(s.buy_diamond) + "D ";
+                if (s.buy_pearl > 0)   costStr += std::to_string(s.buy_pearl) + " 심해핵";
+                ui.drawText(costStr, cx + cardW / 2, btnY + 17, 10,
+                            canBuy ? Color(120, 200, 255) : Color(180, 100, 100), "center");
+            } else if (lvl < s.max_level) {
+                // Upgrade button
+                int upgCost = s.upgrade_gold * lvl;
+                bool canUpg = (totalGold >= upgCost);
+                Color btnBg = canUpg ? Color(20, 60, 20) : Color(30, 30, 20);
+                Color btnBd = canUpg ? Color(80, 200, 80) : Color(100, 100, 60);
+                ui.drawRectWithBorder(cx + 5, btnY, cardW - 10, 34, btnBg, btnBd, 1);
+                char upgBuf[64];
+                snprintf(upgBuf, sizeof(upgBuf), "강화: %dG  (Lv.%d→%d)", upgCost, lvl, lvl + 1);
+                ui.drawText(upgBuf, cx + cardW / 2, btnY + 17, 10,
+                            canUpg ? Color(100, 220, 100) : Color(180, 180, 100), "center");
+            } else {
+                // MAX
+                ui.drawRectWithBorder(cx + 5, btnY, cardW - 10, 34, Color(10, 30, 10), Color(0, 180, 80), 1);
+                ui.drawText("MAX LEVEL", cx + cardW / 2, btnY + 17, 10, Color(0, 220, 100), "center");
+            }
+
+            // Equip hint
+            if (owned && !equipped && sel) {
+                ui.drawText("[E] 장착", cx + cardW / 2, cy + cardH - 6, 9, Color(180, 220, 255), "center");
+            }
+        }
+
+        ui.drawText("클릭/SPACE: 구매·강화  |  E: 장착  |  방향키: 선택  |  ESC: 뒤로", SCREEN_W / 2,
+                    SCREEN_H - 12, 11, Color(100, 120, 160));
+    }
+
+    void handleShipShopEvent(const SDL_Event& e) {
+        auto& ships = getShipTypes();
+        int numShips = (int)ships.size();
+
+        if (e.type == SDL_KEYDOWN) {
+            switch (e.key.keysym.scancode) {
+                case SDL_SCANCODE_ESCAPE:
+                    saveData.save();
+                    state = GameState::MENU;
+                    break;
+                case SDL_SCANCODE_LEFT: case SDL_SCANCODE_A:
+                    shipShopSel = (shipShopSel - 1 + numShips) % numShips; break;
+                case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D:
+                    shipShopSel = (shipShopSel + 1) % numShips; break;
+                case SDL_SCANCODE_UP: case SDL_SCANCODE_W:
+                    shipShopSel = (shipShopSel - 3 + numShips) % numShips; break;
+                case SDL_SCANCODE_DOWN: case SDL_SCANCODE_S:
+                    shipShopSel = (shipShopSel + 3) % numShips; break;
+                case SDL_SCANCODE_SPACE: case SDL_SCANCODE_RETURN:
+                    buyOrUpgradeShip(shipShopSel); break;
+                case SDL_SCANCODE_E:
+                    equipShip(shipShopSel); break;
+                default: break;
+            }
+        } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+            int mx = e.button.x, my = e.button.y;
+            int cardW = 220, cardH = 200;
+            int cols = 3, startX = 40, startY = 135, gapX = 240, gapY = 215;
+            for (int i = 0; i < numShips; i++) {
+                int col = i % cols, row = i / cols;
+                int cx = startX + col * gapX;
+                int cy = startY + row * gapY;
+                if (mx >= cx && mx <= cx + cardW && my >= cy && my <= cy + cardH) {
+                    shipShopSel = i;
+                    // Click on button area = buy/upgrade; upper area = equip if owned
+                    int btnY = cy + cardH - 42;
+                    if (my >= btnY) {
+                        buyOrUpgradeShip(i);
+                    } else {
+                        equipShip(i);
+                    }
+                }
+            }
+        }
+    }
+
+    void buyOrUpgradeShip(int idx) {
+        auto& ships = getShipTypes();
+        if (idx < 0 || idx >= (int)ships.size()) return;
+        auto& s = ships[idx];
+
+        auto it = saveData.ship_levels.find(s.key);
+        int lvl = (it != saveData.ship_levels.end()) ? it->second : 0;
+
+        if (lvl == 0) {
+            // Purchase
+            if (s.buy_gold > 0 && totalGold < s.buy_gold) { notify("골드가 부족합니다!", 80); return; }
+            if (s.buy_diamond > 0 && totalDiamonds < s.buy_diamond) { notify("다이아몬드가 부족합니다!", 80); return; }
+            if (s.buy_pearl > 0 && saveData.abyss_pearls < s.buy_pearl) { notify("심해핵이 부족합니다!", 80); return; }
+            totalGold -= s.buy_gold;
+            totalDiamonds -= s.buy_diamond;
+            saveData.abyss_pearls -= s.buy_pearl;
+            saveData.gold = totalGold;
+            saveData.diamonds = totalDiamonds;
+            saveData.ship_levels[s.key] = 1;
+            saveData.equipped_ship = s.key;
+            saveData.save();
+            notify(std::string("전함 구매: ") + s.name_ko + " (장착됨)", 120);
+        } else if (lvl < s.max_level) {
+            // Upgrade
+            int upgCost = s.upgrade_gold * lvl;
+            if (totalGold < upgCost) { notify("골드가 부족합니다!", 80); return; }
+            totalGold -= upgCost;
+            saveData.gold = totalGold;
+            saveData.ship_levels[s.key] = lvl + 1;
+            saveData.save();
+            char buf[128];
+            snprintf(buf, sizeof(buf), "%s Lv.%d → Lv.%d 강화!", s.name_ko, lvl, lvl + 1);
+            notify(buf, 120);
+        } else {
+            notify("이미 최대 레벨입니다!", 80);
+        }
+    }
+
+    void equipShip(int idx) {
+        auto& ships = getShipTypes();
+        if (idx < 0 || idx >= (int)ships.size()) return;
+        auto& s = ships[idx];
+
+        auto it = saveData.ship_levels.find(s.key);
+        int lvl = (it != saveData.ship_levels.end()) ? it->second : 0;
+        if (lvl == 0) { notify("먼저 전함을 구매하세요!", 80); return; }
+
+        saveData.equipped_ship = s.key;
+        saveData.save();
+        notify(std::string(s.name_ko) + " 장착!", 100);
+    }
+
     // ── Job Shop UI & Event Handlers ──
     void drawJobShop() {
         SDL_SetRenderDrawColor(ren, 8, 8, 16, 255);
@@ -3631,97 +3948,119 @@ public:
 
     void drawMultiplayerLobby() {
         // Background
-        SDL_SetRenderDrawColor(ren, 8, 12, 25, 255);
+        SDL_SetRenderDrawColor(ren, 10, 14, 22, 255);
         SDL_RenderClear(ren);
 
         // Neon starfield background
-        starField.draw(ren, Vec2(mpSearchTimer * 0.2f, mpSearchTimer * 0.1f), Dimension::PHYSICAL);
+        starField.draw(ren, Vec2(mpSearchTimer * 0.1f, mpSearchTimer * 0.05f), Dimension::PHYSICAL);
 
-        // Title
-        float pulse = 0.8f + 0.2f * std::sin(mpSearchTimer * 0.05f);
-        Color titleCol(0, (Uint8)(180 + 75 * pulse), 255, 255);
-        ui.drawText("MULTIPLAYER LOBBY", SCREEN_W / 2, 70, 36, titleCol, "center");
+        // Title (Valorant styled neon red / white)
+        float pulse = 0.8f + 0.2f * std::sin(mpSearchTimer * 0.08f);
+        Color titleCol(255, (Uint8)(70 + 30 * pulse), (Uint8)(85 + 30 * pulse), 255);
+        ui.drawText("CHAMBER Matchmaking", SCREEN_W / 2, 45, 30, titleCol, "center");
 
-        // Glassmorphism Main Panel
-        ui.drawRectWithBorder(200, 110, 400, 380, Color(12, 18, 35, 220), Color(0, 180, 255, 120), 2);
+        // Server Status HUD
+        int mockPlayers = 138 + ((int)mpSearchTimer / 100) % 7 + (int)(5 * std::sin(mpSearchTimer * 0.02f));
+        char hudBuf[256];
+        snprintf(hudBuf, sizeof(hudBuf), "REGION: GLOBAL  |  MATCHMAKER: ONLINE  |  PLAYERS: %d ACTIVE", mockPlayers);
+        ui.drawText(hudBuf, SCREEN_W / 2, 75, 10, Color(150, 180, 200), "center");
+
+        // Valorant sleek container panel
+        ui.drawRectWithBorder(200, 100, 400, 385, Color(16, 20, 30, 240), Color(255, 70, 85, 100), 2);
+        
+        // Red top accent strip like Valorant menu
+        drawRect(ren, 200, 100, 400, 5, Color(255, 70, 85));
+
 
         if (!netClient.loggedIn) {
-            ui.drawText("계정 로그인 / 회원가입", SCREEN_W / 2, 140, 15, Color(180, 210, 255), "center");
+            ui.drawText("로그인 및 회원가입 (LOGIN & REGISTER)", SCREEN_W / 2, 130, 13, Color(240, 240, 255), "center");
 
             // Server IP
-            ui.drawText("서버 IP 주소", 250, 172, 10, Color(140, 170, 200), "left");
-            Color ipBorder = (lobbyInputSel == 0) ? Color(0, 255, 180) : Color(60, 80, 120);
-            ui.drawRectWithBorder(250, 185, 300, 32, (lobbyInputSel == 0) ? Color(20, 40, 80) : Color(15, 20, 40), ipBorder, (lobbyInputSel == 0) ? 2 : 1);
-            ui.drawText(serverIP, 260, 194, 12, Color(255, 255, 255), "left");
+            ui.drawText("서버 주소 (Server IP Address)", 250, 160, 9, Color(160, 180, 200), "left");
+            Color ipBorder = (lobbyInputSel == 0) ? Color(255, 70, 85) : Color(60, 80, 110);
+            ui.drawRectWithBorder(250, 173, 300, 32, (lobbyInputSel == 0) ? Color(30, 35, 55) : Color(18, 22, 34), ipBorder, (lobbyInputSel == 0) ? 2 : 1);
+            ui.drawText(serverIP, 260, 182, 11, Color(255, 255, 255), "left");
 
             // Username
-            ui.drawText("사용자 ID", 250, 232, 10, Color(140, 170, 200), "left");
-            Color userBorder = (lobbyInputSel == 1) ? Color(0, 255, 180) : Color(60, 80, 120);
-            ui.drawRectWithBorder(250, 245, 300, 32, (lobbyInputSel == 1) ? Color(20, 40, 80) : Color(15, 20, 40), userBorder, (lobbyInputSel == 1) ? 2 : 1);
-            ui.drawText(userTyped, 260, 254, 12, Color(255, 255, 255), "left");
+            ui.drawText("사용자 이름 (Username)", 250, 218, 9, Color(160, 180, 200), "left");
+            Color userBorder = (lobbyInputSel == 1) ? Color(255, 70, 85) : Color(60, 80, 110);
+            ui.drawRectWithBorder(250, 231, 300, 32, (lobbyInputSel == 1) ? Color(30, 35, 55) : Color(18, 22, 34), userBorder, (lobbyInputSel == 1) ? 2 : 1);
+            ui.drawText(userTyped, 260, 240, 11, Color(255, 255, 255), "left");
 
             // Password
-            ui.drawText("비밀번호", 250, 292, 10, Color(140, 170, 200), "left");
-            Color passBorder = (lobbyInputSel == 2) ? Color(0, 255, 180) : Color(60, 80, 120);
-            ui.drawRectWithBorder(250, 305, 300, 32, (lobbyInputSel == 2) ? Color(20, 40, 80) : Color(15, 20, 40), passBorder, (lobbyInputSel == 2) ? 2 : 1);
+            ui.drawText("비밀번호 (Password)", 250, 276, 9, Color(160, 180, 200), "left");
+            Color passBorder = (lobbyInputSel == 2) ? Color(255, 70, 85) : Color(60, 80, 110);
+            ui.drawRectWithBorder(250, 289, 300, 32, (lobbyInputSel == 2) ? Color(30, 35, 55) : Color(18, 22, 34), passBorder, (lobbyInputSel == 2) ? 2 : 1);
             std::string maskedPass(passTyped.size(), '*');
-            ui.drawText(maskedPass, 260, 314, 12, Color(255, 255, 255), "left");
+            ui.drawText(maskedPass, 260, 298, 11, Color(255, 255, 255), "left");
 
-            // Login Button (Hover state check using mouseScreen coordinates)
-            bool loginHover = (mouseScreen.x >= 250 && mouseScreen.x <= 390 && mouseScreen.y >= 355 && mouseScreen.y <= 393);
-            ui.drawRectWithBorder(250, 355, 140, 38, loginHover ? Color(35, 110, 65, 230) : Color(20, 75, 45, 200), loginHover ? Color(100, 255, 150) : Color(60, 180, 100), 1);
-            ui.drawText("로그인", 320, 368, 12, Color(220, 255, 220), "center");
+            // Login Button
+            bool loginHover = (mouseScreen.x >= 250 && mouseScreen.x <= 390 && mouseScreen.y >= 342 && mouseScreen.y <= 380);
+            ui.drawRectWithBorder(250, 342, 140, 38, loginHover ? Color(255, 70, 85, 230) : Color(120, 30, 45, 200), loginHover ? Color(255, 255, 255) : Color(200, 50, 70), 1);
+            ui.drawText("로그인 (Login)", 320, 355, 11, Color(255, 255, 255), "center");
 
             // Register Button
-            bool regHover = (mouseScreen.x >= 410 && mouseScreen.x <= 550 && mouseScreen.y >= 355 && mouseScreen.y <= 393);
-            ui.drawRectWithBorder(410, 355, 140, 38, regHover ? Color(55, 65, 120, 230) : Color(35, 45, 85, 200), regHover ? Color(150, 210, 255) : Color(80, 130, 200), 1);
-            ui.drawText("회원가입", 480, 368, 12, Color(220, 235, 255), "center");
+            bool regHover = (mouseScreen.x >= 410 && mouseScreen.x <= 550 && mouseScreen.y >= 342 && mouseScreen.y <= 380);
+            ui.drawRectWithBorder(410, 342, 140, 38, regHover ? Color(55, 65, 110, 230) : Color(30, 38, 70, 200), regHover ? Color(150, 210, 255) : Color(70, 110, 180), 1);
+            ui.drawText("회원가입 (Register)", 480, 355, 11, Color(220, 235, 255), "center");
+
+            // Google Login Button
+            bool googleHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 390 && mouseScreen.y <= 428);
+            ui.drawRectWithBorder(250, 390, 300, 38, googleHover ? Color(240, 240, 240) : Color(255, 255, 255), googleHover ? Color(255, 255, 255) : Color(220, 220, 220), 1);
+            ui.drawText("Google 계정으로 로그인 (Google Login)", 400, 403, 10, Color(60, 60, 60), "center");
 
             // Back Button
-            bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 410 && mouseScreen.y <= 448);
-            ui.drawRectWithBorder(250, 410, 300, 38, backHover ? Color(90, 30, 30, 230) : Color(65, 20, 20, 200), backHover ? Color(255, 130, 130) : Color(180, 60, 60), 1);
-            ui.drawText("메인메뉴로 돌아가기 (ESC)", 400, 423, 11, Color(255, 210, 210), "center");
+            bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 438 && mouseScreen.y <= 476);
+            ui.drawRectWithBorder(250, 438, 300, 38, backHover ? Color(40, 45, 55, 230) : Color(24, 28, 38, 200), backHover ? Color(200, 200, 220) : Color(100, 100, 120), 1);
+            ui.drawText("돌아가기 (Go Back) [ESC]", 400, 451, 10, Color(210, 220, 230), "center");
 
-            ui.drawText("Tab 키: 필드 전환  /  마우스 클릭 및 타이핑 가능", SCREEN_W / 2, 465, 10, Color(120, 140, 180), "center");
+            ui.drawText("Tab: 필드 이동 (Switch field)  |  타이핑 가능 (Click to type)", SCREEN_W / 2, 483, 9, Color(120, 140, 160), "center");
         } else {
             // Logged In Lobby
             if (mpSearching) {
-                ui.drawText("매칭 대기 중", SCREEN_W / 2, 160, 18, Color(0, 180, 255), "center");
+                // Pulsing finding match header
+                int blink = (int)(std::abs(std::sin(mpSearchTimer * 0.06f)) * 80 + 175);
+                ui.drawText("FINDING MATCH", SCREEN_W / 2, 160, 20, Color((Uint8)blink, 50, 70), "center");
                 
-                int elapsed = (int)(mpSearchTimer / 60.0f);
-                int blink = (int)(std::abs(std::sin(mpSearchTimer * 0.07f)) * 100 + 155);
+                int totalSecs = (int)(mpSearchTimer / 60.0f);
+                int mins = totalSecs / 60;
+                int secs = totalSecs % 60;
                 char timeBuf[128];
-                snprintf(timeBuf, sizeof(timeBuf), "상대방 플레이어를 찾는 중... (%d초 경과)", elapsed);
-                ui.drawText(timeBuf, SCREEN_W / 2, 230, 13, Color(blink, blink, 255), "center");
+                snprintf(timeBuf, sizeof(timeBuf), "매칭 대기 시간 (TIME ELAPSED) : %02d:%02d", mins, secs);
+                ui.drawText(timeBuf, SCREEN_W / 2, 225, 12, Color(200, 220, 240), "center");
 
-                // Cancel Match Button
-                bool cancelHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 320 && mouseScreen.y <= 365);
-                ui.drawRectWithBorder(250, 320, 300, 45, cancelHover ? Color(100, 30, 30, 230) : Color(70, 20, 20, 200), cancelHover ? Color(255, 120, 120) : Color(180, 60, 60), 1);
-                ui.drawText("매칭 취소 (ESC)", 400, 336, 13, Color(255, 200, 200), "center");
+                ui.drawText("대기열의 다른 글로벌 플레이어와 연결 중...", SCREEN_W / 2, 260, 10, Color(140, 160, 180), "center");
+                ui.drawText("Connecting to other players in the queue...", SCREEN_W / 2, 278, 10, Color(110, 130, 150), "center");
+
+                // Cancel Match Button (Valorant themed red Cancel button)
+                bool cancelHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 330 && mouseScreen.y <= 375);
+                ui.drawRectWithBorder(250, 330, 300, 45, cancelHover ? Color(255, 70, 85, 230) : Color(150, 35, 45, 200), cancelHover ? Color(255, 255, 255) : Color(200, 50, 60), 1);
+                ui.drawText("매칭 취소 (CANCEL MATCH) [ESC]", 400, 346, 12, Color(255, 235, 240), "center");
             } else {
-                ui.drawText("환영합니다, " + netClient.loggedUser + " 님!", SCREEN_W / 2, 145, 16, Color(100, 255, 180), "center");
+                ui.drawText("WELCOME, " + netClient.loggedUser + "!", SCREEN_W / 2, 140, 15, Color(100, 255, 180), "center");
 
                 // 1vs1 Button
-                bool pvpHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 200 && mouseScreen.y <= 242);
-                ui.drawRectWithBorder(250, 200, 300, 42, pvpHover ? Color(35, 65, 130) : Color(20, 40, 90), pvpHover ? Color(100, 210, 255) : Color(0, 150, 220), 1);
-                ui.drawText("1vs1 아레나 대결 시작", 400, 215, 13, Color(220, 245, 255), "center");
+                bool pvpHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 190 && mouseScreen.y <= 232);
+                ui.drawRectWithBorder(250, 190, 300, 42, pvpHover ? Color(255, 70, 85) : Color(140, 30, 45), pvpHover ? Color(255, 255, 255) : Color(200, 50, 70), 1);
+                ui.drawText("1vs1 아레나 대결 (1vs1 ARENA)", 400, 205, 12, Color(255, 255, 255), "center");
 
                 // Coop Button
-                bool coopHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 260 && mouseScreen.y <= 302);
-                ui.drawRectWithBorder(250, 260, 300, 42, coopHover ? Color(35, 100, 80) : Color(20, 70, 55), coopHover ? Color(100, 255, 210) : Color(0, 200, 150), 1);
-                ui.drawText("Co-op 공동 생존 시작", 400, 275, 13, Color(220, 255, 240), "center");
+                bool coopHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 250 && mouseScreen.y <= 292);
+                ui.drawRectWithBorder(250, 250, 300, 42, coopHover ? Color(35, 95, 75) : Color(20, 65, 50), coopHover ? Color(100, 255, 200) : Color(0, 180, 130), 1);
+                ui.drawText("Co-op 공동 생존 (CO-OP SURVIVAL)", 400, 265, 12, Color(210, 255, 230), "center");
 
                 // Logout Button
-                bool logoutHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 335 && mouseScreen.y <= 373);
-                ui.drawRectWithBorder(250, 335, 300, 38, logoutHover ? Color(60, 60, 70) : Color(40, 40, 48), logoutHover ? Color(180, 180, 200) : Color(120, 120, 130), 1);
-                ui.drawText("로그아웃", 400, 348, 12, Color(220, 220, 220), "center");
+                bool logoutHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 325 && mouseScreen.y <= 363);
+                ui.drawRectWithBorder(250, 325, 300, 38, logoutHover ? Color(60, 65, 75) : Color(35, 38, 45), logoutHover ? Color(200, 200, 220) : Color(120, 120, 130), 1);
+                ui.drawText("로그아웃 (LOGOUT)", 400, 338, 11, Color(210, 220, 230), "center");
 
                 // Back Button
-                bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 395 && mouseScreen.y <= 433);
-                ui.drawRectWithBorder(250, 395, 300, 38, backHover ? Color(90, 30, 30) : Color(65, 20, 20), backHover ? Color(255, 130, 130) : Color(180, 60, 60), 1);
-                ui.drawText("메인메뉴로 돌아가기 (ESC)", 400, 408, 11, Color(255, 210, 210), "center");
+                bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 385 && mouseScreen.y <= 423);
+                ui.drawRectWithBorder(250, 385, 300, 38, backHover ? Color(45, 50, 60) : Color(24, 28, 35), backHover ? Color(200, 200, 220) : Color(100, 100, 110), 1);
+                ui.drawText("돌아가기 (GO BACK) [ESC]", 400, 398, 10, Color(200, 210, 220), "center");
             }
         }
+
 
         // Status Message at bottom
         if (!mpStatus.empty()) {
@@ -3754,6 +4093,8 @@ public:
                     mpStatus = "로그인 중...";
                     if (netClient.loginUser(userTyped, passTyped, saveData, serverIP)) {
                         mpStatus = "로그인 성공!";
+                        totalGold = saveData.gold;
+                        totalDiamonds = saveData.diamonds;
                         SDL_StopTextInput();
                     } else {
                         mpStatus = "로그인 실패 (ID/PW 또는 서버 상태 확인)";
@@ -3801,16 +4142,18 @@ public:
                     lobbyInputSel = 2;
                 }
                 // Buttons
-                else if (mx >= 250 && mx <= 390 && my >= 355 && my <= 393) { // Login
+                else if (mx >= 250 && mx <= 390 && my >= 342 && my <= 380) { // Login
                     mpStatus = "로그인 중...";
                     if (netClient.loginUser(userTyped, passTyped, saveData, serverIP)) {
                         mpStatus = "로그인 성공!";
+                        totalGold = saveData.gold;
+                        totalDiamonds = saveData.diamonds;
                         SDL_StopTextInput();
                     } else {
                         mpStatus = "로그인 실패 (ID/PW 또는 서버 상태 확인)";
                     }
                 }
-                else if (mx >= 410 && mx <= 550 && my >= 355 && my <= 393) { // Register
+                else if (mx >= 410 && mx <= 550 && my >= 342 && my <= 380) { // Register
                     mpStatus = "회원가입 진행 중...";
                     if (netClient.registerUser(userTyped, passTyped, serverIP)) {
                         mpStatus = "회원가입 성공! 이제 로그인 해주세요.";
@@ -3818,7 +4161,18 @@ public:
                         mpStatus = "회원가입 실패 (이미 존재하는 ID 등)";
                     }
                 }
-                else if (mx >= 250 && mx <= 550 && my >= 410 && my <= 448) { // Back
+                else if (mx >= 250 && mx <= 550 && my >= 390 && my <= 428) { // Google Login
+                    mpStatus = "구글 인증 대기 중 (브라우저를 확인하세요)...";
+                    if (netClient.loginGoogle(saveData)) {
+                        mpStatus = "구글 로그인 성공!";
+                        totalGold = saveData.gold;
+                        totalDiamonds = saveData.diamonds;
+                        SDL_StopTextInput();
+                    } else {
+                        mpStatus = "❌ 구글 로그인 실패 또는 취소됨";
+                    }
+                }
+                else if (mx >= 250 && mx <= 550 && my >= 438 && my <= 476) { // Back
                     SDL_StopTextInput();
                     state = GameState::MENU;
                     mpStatus = "";
@@ -3832,7 +4186,7 @@ public:
                         SDL_StartTextInput(); // Restart input context just in case
                     }
                 } else {
-                    if (mx >= 250 && mx <= 550 && my >= 200 && my <= 242) { // 1vs1
+                    if (mx >= 250 && mx <= 550 && my >= 190 && my <= 232) { // 1vs1
                         mpStatus = "1vs1 아레나 매칭 큐에 진입 중...";
                         if (netClient.startMatchmaking("1v1", serverIP)) {
                             mpSearching = true;
@@ -3842,7 +4196,7 @@ public:
                             mpStatus = "❌ 매칭 진입 실패 (서버 연결 확인)";
                         }
                     }
-                    else if (mx >= 250 && mx <= 550 && my >= 260 && my <= 302) { // Coop
+                    else if (mx >= 250 && mx <= 550 && my >= 250 && my <= 292) { // Coop
                         mpStatus = "Co-op 협동 생존 매칭 큐에 진입 중...";
                         if (netClient.startMatchmaking("coop", serverIP)) {
                             mpSearching = true;
@@ -3852,14 +4206,15 @@ public:
                             mpStatus = "❌ 매칭 진입 실패 (서버 연결 확인)";
                         }
                     }
-                    else if (mx >= 250 && mx <= 550 && my >= 335 && my <= 373) { // Logout
+                    else if (mx >= 250 && mx <= 550 && my >= 325 && my <= 363) { // Logout
                         netClient.cleanup();
                         netClient.loggedIn = false;
                         netClient.loggedUser = "";
+                        netClient.clearSession();
                         mpStatus = "로그아웃되었습니다.";
                         SDL_StartTextInput();
                     }
-                    else if (mx >= 250 && mx <= 550 && my >= 395 && my <= 433) { // Back
+                    else if (mx >= 250 && mx <= 550 && my >= 385 && my <= 423) { // Back
                         state = GameState::MENU;
                         mpStatus = "";
                     }

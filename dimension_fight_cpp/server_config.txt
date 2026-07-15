@@ -1,0 +1,11 @@
+# Dimension Fight Server Configuration
+# Local Proxy listeners
+
+AUTH_HOST=127.0.0.1
+AUTH_PORT=9000
+
+MATCH_HOST=127.0.0.1
+MATCH_PORT=9001
+
+RELAY_HOST=127.0.0.1
+RELAY_PORT=9002

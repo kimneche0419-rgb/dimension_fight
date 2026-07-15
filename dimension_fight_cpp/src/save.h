@@ -10,6 +10,7 @@ struct SaveData {
     int gold = 0;
     int diamonds = 0;
     int highScore = 0;
+    int max_unlocked_chapter = 1;
     int upgrades[6] = {0};  // shield, speed, hp, xp, dash, dmg
 
     // Resources
@@ -26,6 +27,10 @@ struct SaveData {
     // Active configurations
     std::string player_job = "";
     std::string equipped_fruit = "";
+    std::string equipped_ship = "fighter";
+
+    // Ship system
+    std::map<std::string, int> ship_levels = {{"fighter", 1}};
 
     // Collections
     std::vector<std::string> equipped_skills;
@@ -52,12 +57,14 @@ struct SaveData {
         f << "  \"gacha_pity_count\": " << gacha_pity_count << ",\n";
         f << "  \"player_job\": \"" << player_job << "\",\n";
         f << "  \"equipped_fruit\": \"" << equipped_fruit << "\",\n";
+        f << "  \"equipped_ship\": \"" << equipped_ship << "\",\n";
         f << "  \"shield_boost\": " << upgrades[0] << ",\n";
         f << "  \"speed_boost\": " << upgrades[1] << ",\n";
         f << "  \"hp_boost\": " << upgrades[2] << ",\n";
         f << "  \"xp_bonus\": " << upgrades[3] << ",\n";
         f << "  \"dash_cdr\": " << upgrades[4] << ",\n";
         f << "  \"dmg_boost\": " << upgrades[5] << ",\n";
+        f << "  \"max_unlocked_chapter\": " << max_unlocked_chapter << ",\n";
 
         // Save maps
         f << "  \"owned_skills\": {";
@@ -99,6 +106,15 @@ struct SaveData {
         f << "  \"fruit_awakenings\": {";
         first = true;
         for (auto& [k, v] : fruit_awakenings) {
+            if (!first) f << ", ";
+            f << "\"" << k << "\": " << v;
+            first = false;
+        }
+        f << "},\n";
+
+        f << "  \"ship_levels\": {";
+        first = true;
+        for (auto& [k, v] : ship_levels) {
             if (!first) f << ", ";
             f << "\"" << k << "\": " << v;
             first = false;
@@ -236,6 +252,7 @@ struct SaveData {
             std::string s;
             if ((s = parseStr("player_job")) != "__not_found__") player_job = s;
             if ((s = parseStr("equipped_fruit")) != "__not_found__") equipped_fruit = s;
+            if ((s = parseStr("equipped_ship")) != "__not_found__") equipped_ship = s;
 
             if ((v = parseVal("shield_boost")) != -99999) upgrades[0] = v;
             if ((v = parseVal("speed_boost")) != -99999) upgrades[1] = v;
@@ -243,6 +260,7 @@ struct SaveData {
             if ((v = parseVal("xp_bonus")) != -99999) upgrades[3] = v;
             if ((v = parseVal("dash_cdr")) != -99999) upgrades[4] = v;
             if ((v = parseVal("dmg_boost")) != -99999) upgrades[5] = v;
+            if ((v = parseVal("max_unlocked_chapter")) != -99999) max_unlocked_chapter = v;
 
             // Maps
             if (line.find("\"owned_skills\"") != std::string::npos) {
@@ -259,6 +277,11 @@ struct SaveData {
             }
             if (line.find("\"fruit_awakenings\"") != std::string::npos) {
                 fruit_awakenings = parseMap("fruit_awakenings");
+            }
+            if (line.find("\"ship_levels\"") != std::string::npos) {
+                ship_levels = parseMap("ship_levels");
+                if (ship_levels.find("fighter") == ship_levels.end())
+                    ship_levels["fighter"] = 1;
             }
 
             // Lists

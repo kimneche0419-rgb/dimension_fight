@@ -15,7 +15,7 @@ enum class Dimension { PHYSICAL, VOID_DIM };
 // ── Game States ──
 enum class GameState {
     MENU, COLOR_SELECT, PLAYING, DEATH, WIN,
-    SHOP, CRAFTING, GACHA, JOB_SHOP, MULTIPLAYER_LOBBY
+    SHOP, CRAFTING, GACHA, JOB_SHOP, MULTIPLAYER_LOBBY, SHIP_SHOP
 };
 
 // ── Ship Mode ──
@@ -165,6 +165,37 @@ inline const std::vector<ShipColor>& getShipColors() {
         {"Gold",      {255,215,0},   {200,170,0}},
     };
     return colors;
+}
+
+// ── Ship Types ──
+struct ShipData {
+    const char* key;
+    const char* name_ko;
+    const char* desc;
+    int buy_gold;
+    int buy_diamond;
+    int buy_pearl;
+    int upgrade_gold;   // gold cost per level-up
+    int max_level;
+    int hp_per_lvl;
+    int shield_per_lvl;
+    int dmg_pct_per_lvl;    // damage % per level
+    int speed_pct_per_lvl;  // speed % per level
+    Color color;
+    Color accent;
+};
+
+inline const std::vector<ShipData>& getShipTypes() {
+    static const std::vector<ShipData> ships = {
+        //  key          name      desc                          buyG  buyD  buyP  upgG  max  hp  sh  dmg spd  color               accent
+        {"fighter",    "전투기",   "기본 전투기. 균형잡힌 성능",       0,    0,    0,    80,  10,  5,  0,  5,  3,  {100,180,255}, {50,120,200}},
+        {"cruiser",    "순양함",   "중장갑 전함. 높은 체력과 방어",   500,    0,    0,   150,  10, 20,  8,  3,  0,  {200,160,80},  {140,100,20}},
+        {"dreadnought","드레드노트","강력한 화력의 대형 전함",       2000,    0,    0,   250,  10,  8,  0, 15,  0,  {220,80,80},   {160,30,30}},
+        {"stealth",    "스텔스",   "고속 기동 전함. 빠른 속도",      1500,    0,    0,   200,  10,  3,  0,  5, 10,  {80,220,180},  {30,160,120}},
+        {"abyss_ship", "심해함",   "심해 에너지 전함. 강력한 방어",     0,    0,   30,   200,  10,  5, 15,  8,  2,  {0,120,200},   {0,60,150}},
+        {"phantom",    "팬텀",     "공허 전함. 모든 능력치 강화",       0,   50,    0,   300,  10, 10,  5, 10,  6,  {180,80,255},  {100,20,200}},
+    };
+    return ships;
 }
 
 // ── Persistent Upgrades ──

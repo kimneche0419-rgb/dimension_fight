@@ -3,3 +3,24 @@ __pycache__/
 *.pkl
 .idea/
 .venv/
+
+# Sensitive / local data
+users.db
+login_session.txt
+proxy_config.txt
+
+# Build artifacts
+build/
+dist/
+*.exe
+*.spec
+dimension_fight_cpp/build/
+dimension_fight_cpp/build2/
+dimension_fight_cpp/build_output/
+dimension_fight_cpp/compile_out.txt
+
+# Misc local state
+.moai/state/active-sessions.json
+.moai/state/active-sessions.json.lock
+.moai/state/current-session-id.txt
+save_data_cpp.json

@@ -20,6 +20,32 @@ public:
     std::string loggedUser = "";
     std::string currentSessionId = "";
 
+    void saveSession(const std::string& user, const std::string& pass) {
+        std::ofstream f("login_session.txt");
+        if (f.is_open()) {
+            f << user << "\n" << pass << "\n";
+            f.close();
+        }
+    }
+
+    bool loadSession(std::string& outUser, std::string& outPass) {
+        std::ifstream f("login_session.txt");
+        if (!f.is_open()) return false;
+        std::string u, p;
+        if (std::getline(f, u) && std::getline(f, p)) {
+            outUser = u;
+            outPass = p;
+            f.close();
+            return true;
+        }
+        f.close();
+        return false;
+    }
+
+    void clearSession() {
+        std::remove("login_session.txt");
+    }
+
     // Configurable host/port
     std::string authHost = "127.0.0.1";
     int authPort = 9000;
@@ -195,6 +221,7 @@ public:
         if (resp.rfind("LOGIN_OK", 0) == 0) {
             loggedIn = true;
             loggedUser = user;
+            saveSession(user, pass);
             std::string jsonStr = resp.substr(9);
             std::ofstream f("save_data_cpp.json");
             if (f.is_open()) {
@@ -203,6 +230,52 @@ public:
             }
             outData.load();
             return true;
+        }
+        closesocket(authSock);
+        authSock = INVALID_SOCKET;
+        return false;
+    }
+
+    bool loginGoogle(SaveData& outData) {
+        if (authSock != INVALID_SOCKET) {
+            closesocket(authSock);
+            authSock = INVALID_SOCKET;
+        }
+        if (!connectToHost(authHost, authPort, authSock)) return false;
+
+        u_long mode = 0; ioctlsocket(authSock, FIONBIO, &mode);
+        bool ok = sendLine(authSock, "GOOGLE_LOGIN");
+        if (!ok) {
+            closesocket(authSock);
+            authSock = INVALID_SOCKET;
+            return false;
+        }
+        std::string resp = recvLine(authSock, true);
+        
+        mode = 1; ioctlsocket(authSock, FIONBIO, &mode);
+
+        if (resp.rfind("LOGIN_OK", 0) == 0) {
+            size_t email_space = resp.find(' ', 9);
+            if (email_space != std::string::npos) {
+                std::string email = resp.substr(9, email_space - 9);
+                size_t pw_space = resp.find(' ', email_space + 1);
+                if (pw_space != std::string::npos) {
+                    std::string pw = resp.substr(email_space + 1, pw_space - (email_space + 1));
+                    std::string jsonStr = resp.substr(pw_space + 1);
+
+                    loggedIn = true;
+                    loggedUser = email;
+                    saveSession(email, pw);
+
+                    std::ofstream f("save_data_cpp.json");
+                    if (f.is_open()) {
+                        f << jsonStr;
+                        f.close();
+                    }
+                    outData.load();
+                    return true;
+                }
+            }
         }
         closesocket(authSock);
         authSock = INVALID_SOCKET;
