@@ -18,6 +18,7 @@ dimension_fight_cpp/build/
 dimension_fight_cpp/build2/
 dimension_fight_cpp/build_output/
 dimension_fight_cpp/compile_out.txt
+installer_output/
 
 # Misc local state
 .moai/state/active-sessions.json
