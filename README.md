@@ -8,64 +8,15 @@
 
 ## 다운로드
 
-### Windows — CMD (명령 프롬프트)
+[![Download ZIP](https://img.shields.io/badge/⬇_Download-ZIP-00e5ff?style=for-the-badge)](https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.zip)
 
-```cmd
-git clone https://github.com/kimneche0419-rgb/dimension_fight.git
-cd dimension_fight
-```
-
-Git이 없다면 zip으로 받기:
-
-```cmd
-curl -L -o dimension_fight.zip https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.zip
-tar -xf dimension_fight.zip
-```
-
-### Windows — PowerShell
-
-```powershell
-git clone https://github.com/kimneche0419-rgb/dimension_fight.git
-Set-Location dimension_fight
-```
-
-Git이 없다면 zip으로 받기:
-
-```powershell
-Invoke-WebRequest -Uri "https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.zip" -OutFile "dimension_fight.zip"
-Expand-Archive -Path "dimension_fight.zip" -DestinationPath "."
-```
-
-### macOS
+또는 터미널 한 줄 (Mac / Linux / Windows 공통, git만 있으면 됨):
 
 ```bash
 git clone https://github.com/kimneche0419-rgb/dimension_fight.git
-cd dimension_fight
 ```
 
-Git이 없다면 zip으로 받기:
-
-```bash
-curl -L -o dimension_fight.zip https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.zip
-unzip dimension_fight.zip
-```
-
-### Linux
-
-```bash
-git clone https://github.com/kimneche0419-rgb/dimension_fight.git
-cd dimension_fight
-```
-
-Git이 없다면 zip으로 받기:
-
-```bash
-curl -L -o dimension_fight.zip https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.zip
-unzip dimension_fight.zip
-# unzip이 없다면: sudo apt install unzip  (Debian/Ubuntu)
-```
-
-### curl 한 줄 명령 (모든 OS 공통)
+Git이 없다면 curl 한 줄로 압축까지 자동 해제 (Mac / Linux / WSL):
 
 ```bash
 curl -L https://github.com/kimneche0419-rgb/dimension_fight/archive/refs/heads/main.tar.gz | tar -xz
