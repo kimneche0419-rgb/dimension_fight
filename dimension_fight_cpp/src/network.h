@@ -19,22 +19,61 @@ public:
     bool loggedIn = false;
     std::string loggedUser = "";
     std::string currentSessionId = "";
+    // Signed token issued by railway-auth on LOGIN; presented to match/relay so
+    // they can verify the caller actually owns this username (prevents session
+    // hijacking by anyone who just guesses a username or session id).
+    std::string sessionToken = "";
 
-    void saveSession(const std::string& user, const std::string& pass) {
+    // Minimal single-line JSON string-field extractor (mirrors save.h's parseStr),
+    // used to pull protocol fields like "session_token" out of the raw LOGIN_OK body.
+    static std::string extractJsonStringField(const std::string& json, const std::string& key) {
+        auto pos = json.find("\"" + key + "\"");
+        if (pos == std::string::npos) return "";
+        auto colon = json.find(':', pos);
+        if (colon == std::string::npos) return "";
+        auto q1 = json.find('\"', colon);
+        if (q1 == std::string::npos) return "";
+        auto q2 = json.find('\"', q1 + 1);
+        if (q2 == std::string::npos) return "";
+        return json.substr(q1 + 1, q2 - q1 - 1);
+    }
+
+    // Strips a "key": "value" pair (and its adjoining comma) out of a flat
+    // single-line JSON blob, so the short-lived session token never ends up
+    // written to disk in save_data_cpp.json.
+    static std::string stripJsonStringField(const std::string& json, const std::string& key) {
+        auto pos = json.find("\"" + key + "\"");
+        if (pos == std::string::npos) return json;
+        auto colon = json.find(':', pos);
+        if (colon == std::string::npos) return json;
+        auto q1 = json.find('\"', colon);
+        if (q1 == std::string::npos) return json;
+        auto q2 = json.find('\"', q1 + 1);
+        if (q2 == std::string::npos) return json;
+        size_t end = q2 + 1;
+        if (end < json.size() && json[end] == ',') end++;
+        std::string result = json.substr(0, pos) + json.substr(end);
+        return result;
+    }
+
+    // Persists the short-lived signed session token (not the password) so
+    // auto-login on next launch can't leak a reusable plaintext credential
+    // from a file on disk. The token expires server-side (see railway-auth).
+    void saveSession(const std::string& user, const std::string& token) {
         std::ofstream f("login_session.txt");
         if (f.is_open()) {
-            f << user << "\n" << pass << "\n";
+            f << user << "\n" << token << "\n";
             f.close();
         }
     }
 
-    bool loadSession(std::string& outUser, std::string& outPass) {
+    bool loadSession(std::string& outUser, std::string& outToken) {
         std::ifstream f("login_session.txt");
         if (!f.is_open()) return false;
-        std::string u, p;
-        if (std::getline(f, u) && std::getline(f, p)) {
+        std::string u, t;
+        if (std::getline(f, u) && std::getline(f, t)) {
             outUser = u;
-            outPass = p;
+            outToken = t;
             f.close();
             return true;
         }
@@ -91,12 +130,16 @@ public:
             std::string key = line.substr(0, eq);
             std::string val = line.substr(eq + 1);
 
+            auto parsePort = [](const std::string& s, int fallback) -> int {
+                try { return std::stoi(s); } catch (...) { return fallback; }
+            };
+
             if (key == "AUTH_HOST") authHost = val;
-            else if (key == "AUTH_PORT") authPort = std::stoi(val);
+            else if (key == "AUTH_PORT") authPort = parsePort(val, authPort);
             else if (key == "MATCH_HOST") matchHost = val;
-            else if (key == "MATCH_PORT") matchPort = std::stoi(val);
+            else if (key == "MATCH_PORT") matchPort = parsePort(val, matchPort);
             else if (key == "RELAY_HOST") relayHostFallback = val;
-            else if (key == "RELAY_PORT") relayPortFallback = std::stoi(val);
+            else if (key == "RELAY_PORT") relayPortFallback = parsePort(val, relayPortFallback);
         }
         f.close();
         std::cout << "[Config] Loaded server configuration:\n";
@@ -119,7 +162,9 @@ public:
         }
     }
 
-    bool connectToHost(const std::string& host, int port, SOCKET& outSock) {
+    // connectTimeoutMs bounds how long a connect() attempt can block the caller
+    // (previously relied on the OS default of ~21s on Windows, freezing the UI).
+    bool connectToHost(const std::string& host, int port, SOCKET& outSock, int connectTimeoutMs = 5000) {
         if (outSock != INVALID_SOCKET) return true;
         outSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (outSock == INVALID_SOCKET) return false;
@@ -138,14 +183,50 @@ public:
             return false;
         }
 
-        if (connect(outSock, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR) {
-            freeaddrinfo(result);
+        // Non-blocking connect + select() so an unreachable/firewalled host
+        // fails fast instead of blocking the caller for the OS default timeout.
+        u_long nbMode = 1;
+        ioctlsocket(outSock, FIONBIO, &nbMode);
+
+        int cr = connect(outSock, result->ai_addr, (int)result->ai_addrlen);
+        bool connected = false;
+        if (cr == 0) {
+            connected = true;
+        } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            fd_set writeSet, errSet;
+            FD_ZERO(&writeSet);
+            FD_ZERO(&errSet);
+            FD_SET(outSock, &writeSet);
+            FD_SET(outSock, &errSet);
+            timeval tv;
+            tv.tv_sec = connectTimeoutMs / 1000;
+            tv.tv_usec = (connectTimeoutMs % 1000) * 1000;
+            int sr = select(0, nullptr, &writeSet, &errSet, &tv);
+            if (sr > 0 && FD_ISSET(outSock, &writeSet)) {
+                int soErr = 0;
+                int soErrLen = sizeof(soErr);
+                if (getsockopt(outSock, SOL_SOCKET, SO_ERROR, (char*)&soErr, &soErrLen) == 0 && soErr == 0) {
+                    connected = true;
+                }
+            }
+        }
+
+        freeaddrinfo(result);
+
+        if (!connected) {
             closesocket(outSock);
             outSock = INVALID_SOCKET;
             return false;
         }
 
-        freeaddrinfo(result);
+        // Switch to blocking mode with explicit send/recv timeouts so later
+        // recv() calls can't hang forever if the server stalls or drops silently.
+        u_long bMode = 0;
+        ioctlsocket(outSock, FIONBIO, &bMode);
+        DWORD sockTimeoutMs = 8000;
+        setsockopt(outSock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&sockTimeoutMs, sizeof(sockTimeoutMs));
+        setsockopt(outSock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&sockTimeoutMs, sizeof(sockTimeoutMs));
+
         return true;
     }
 
@@ -221,11 +302,12 @@ public:
         if (resp.rfind("LOGIN_OK", 0) == 0) {
             loggedIn = true;
             loggedUser = user;
-            saveSession(user, pass);
             std::string jsonStr = resp.substr(9);
+            sessionToken = extractJsonStringField(jsonStr, "session_token");
+            saveSession(user, sessionToken);
             std::ofstream f("save_data_cpp.json");
             if (f.is_open()) {
-                f << jsonStr;
+                f << stripJsonStringField(jsonStr, "session_token");
                 f.close();
             }
             outData.load();
@@ -236,7 +318,9 @@ public:
         return false;
     }
 
-    bool loginGoogle(SaveData& outData) {
+    // Passwordless re-login used for the "remember me" auto-login on startup,
+    // using the token saved by saveSession() instead of a stored password.
+    bool loginWithToken(const std::string& user, const std::string& token, SaveData& outData) {
         if (authSock != INVALID_SOCKET) {
             closesocket(authSock);
             authSock = INVALID_SOCKET;
@@ -244,41 +328,33 @@ public:
         if (!connectToHost(authHost, authPort, authSock)) return false;
 
         u_long mode = 0; ioctlsocket(authSock, FIONBIO, &mode);
-        bool ok = sendLine(authSock, "GOOGLE_LOGIN");
+        bool ok = sendLine(authSock, "LOGIN_TOKEN " + user + " " + token);
         if (!ok) {
             closesocket(authSock);
             authSock = INVALID_SOCKET;
             return false;
         }
         std::string resp = recvLine(authSock, true);
-        
+
         mode = 1; ioctlsocket(authSock, FIONBIO, &mode);
 
         if (resp.rfind("LOGIN_OK", 0) == 0) {
-            size_t email_space = resp.find(' ', 9);
-            if (email_space != std::string::npos) {
-                std::string email = resp.substr(9, email_space - 9);
-                size_t pw_space = resp.find(' ', email_space + 1);
-                if (pw_space != std::string::npos) {
-                    std::string pw = resp.substr(email_space + 1, pw_space - (email_space + 1));
-                    std::string jsonStr = resp.substr(pw_space + 1);
-
-                    loggedIn = true;
-                    loggedUser = email;
-                    saveSession(email, pw);
-
-                    std::ofstream f("save_data_cpp.json");
-                    if (f.is_open()) {
-                        f << jsonStr;
-                        f.close();
-                    }
-                    outData.load();
-                    return true;
-                }
+            loggedIn = true;
+            loggedUser = user;
+            std::string jsonStr = resp.substr(9);
+            sessionToken = extractJsonStringField(jsonStr, "session_token");
+            saveSession(user, sessionToken);
+            std::ofstream f("save_data_cpp.json");
+            if (f.is_open()) {
+                f << stripJsonStringField(jsonStr, "session_token");
+                f.close();
             }
+            outData.load();
+            return true;
         }
         closesocket(authSock);
         authSock = INVALID_SOCKET;
+        clearSession(); // Stale/expired token — drop it so we stop retrying with it.
         return false;
     }
 
@@ -316,7 +392,7 @@ public:
         if (!connectToHost(matchHost, matchPort, serverSock)) return false;
 
         u_long m = 0; ioctlsocket(serverSock, FIONBIO, &m);
-        sendLine(serverSock, "MATCH " + loggedUser + " " + mode);
+        sendLine(serverSock, "MATCH " + loggedUser + " " + sessionToken + " " + mode);
         std::string resp = recvLine(serverSock, true);
         m = 1; ioctlsocket(serverSock, FIONBIO, &m);
         return resp == "MATCH_QUEUED";
@@ -346,7 +422,7 @@ public:
             
             outRole = role;
             outIp = relayHost;
-            outPort = std::stoi(relayPortStr);
+            try { outPort = std::stoi(relayPortStr); } catch (...) { return false; }
             currentSessionId = sessionId;
             outPeer = peer;
             
@@ -367,7 +443,7 @@ public:
 
         // Temporarily set blocking for the INIT handshake
         u_long mode = 0; ioctlsocket(peerSock, FIONBIO, &mode);
-        std::string initCmd = "INIT " + sessionId + " " + role + " " + username;
+        std::string initCmd = "INIT " + sessionId + " " + role + " " + username + " " + sessionToken;
         if (!sendLine(peerSock, initCmd)) {
             closesocket(peerSock);
             peerSock = INVALID_SOCKET;

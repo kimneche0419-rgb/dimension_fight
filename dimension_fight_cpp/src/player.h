@@ -215,11 +215,10 @@ public:
             if (dashTimer <= 0) {
                 dashing = false;
                 vel *= 0.3f;
-                if (_job_double_dash && extraDashes > 0) {
-                    // Double dash available
-                } else {
-                    extraDashes = 0;
-                }
+                // Consume the extra-dash charge so the double-dash job ability
+                // (광속) can be earned again on the next cooldown window, instead
+                // of staying permanently spent after its first use.
+                extraDashes = 0;
             }
         } else {
             // Movement

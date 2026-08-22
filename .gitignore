@@ -23,4 +23,12 @@ dimension_fight_cpp/compile_out.txt
 .moai/state/active-sessions.json
 .moai/state/active-sessions.json.lock
 .moai/state/current-session-id.txt
+.moai/state/config-cache.json
+.moai/config/
+.moai/evolution/
+.moai/harness/
+.moai/logs/
+.moai/lessons-inbox.jsonl
 save_data_cpp.json
+.claude/settings.local.json.lock
+.vscode/

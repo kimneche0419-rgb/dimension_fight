@@ -1,10 +1,30 @@
 import asyncio
 import os
 import traceback
+import hmac
+import hashlib
+import time
 
 # sessions: session_id -> { "HOST": (reader, writer, username), "CLIENT": (reader, writer, username), "event": asyncio.Event() }
 sessions = {}
 sessions_lock = asyncio.Lock()
+
+# Must match railway-auth's AUTH_SHARED_SECRET so tokens it issues verify here.
+AUTH_SHARED_SECRET = os.environ.get("AUTH_SHARED_SECRET", "dev-insecure-shared-secret-change-me")
+
+def verify_session_token(username: str, token: str) -> bool:
+    try:
+        tok_user, expiry_str, sig = token.split(".", 2)
+        if tok_user != username:
+            return False
+        expiry = int(expiry_str)
+        if expiry < int(time.time()):
+            return False
+        payload = f"{tok_user}.{expiry}"
+        expected_sig = hmac.new(AUTH_SHARED_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_sig, sig)
+    except Exception:
+        return False
 
 async def relay_stream(reader, writer, name_from, name_to):
     try:
@@ -41,7 +61,7 @@ async def handle_client(reader, writer):
 
         line = init_data.decode("utf-8").strip()
         parts = line.split(" ")
-        if len(parts) < 4 or parts[0].upper() != "INIT":
+        if len(parts) < 5 or parts[0].upper() != "INIT":
             print(f"[Relay Server] Invalid INIT from {addr}: {line}")
             writer.close()
             return
@@ -49,9 +69,15 @@ async def handle_client(reader, writer):
         session_id = parts[1]
         role = parts[2].upper() # HOST or CLIENT
         username = parts[3]
+        token = parts[4]
 
         if role not in ["HOST", "CLIENT"]:
             print(f"[Relay Server] Invalid role {role} from {username}")
+            writer.close()
+            return
+
+        if not verify_session_token(username, token):
+            print(f"[Relay Server] Rejected INIT: invalid/expired session token for {username} (session {session_id})")
             writer.close()
             return
 

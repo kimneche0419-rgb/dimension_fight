@@ -149,10 +149,10 @@ public:
         totalDiamonds = saveData.diamonds;
 
         // Auto-login if session exists
-        std::string savedUser, savedPass;
-        if (netClient.loadSession(savedUser, savedPass)) {
+        std::string savedUser, savedToken;
+        if (netClient.loadSession(savedUser, savedToken)) {
             SDL_Log("Found active login session. Attempting auto-login for user: %s", savedUser.c_str());
-            if (netClient.loginUser(savedUser, savedPass, saveData, serverIP)) {
+            if (netClient.loginWithToken(savedUser, savedToken, saveData)) {
                 totalGold = saveData.gold;
                 totalDiamonds = saveData.diamonds;
                 SDL_Log("Auto-login on startup succeeded!");
@@ -283,36 +283,48 @@ public:
 
         if (state == GameState::MULTIPLAYER_LOBBY && mpSearching) {
             mpSearchTimer += 1.0f;
-            std::string role, peerIP, peerNameStr;
-            int peerPort = 9001;
-            if (netClient.pollMatchResult(role, peerIP, peerPort, peerNameStr)) {
-                mpSearching = false;
-                peerName = peerNameStr;
-                mpRole = role;
-                isMultiplayer = true;
-                peerActive = false;
-                SDL_StopTextInput();
 
-                if (role == "HOST") {
-                    mpStatus = "릴레이 서버 연결 중 (HOST)...";
-                    if (netClient.relayConnect(peerIP, peerPort, netClient.currentSessionId, "HOST", netClient.loggedUser)) {
-                        startGame(1);
-                        state = GameState::PLAYING;
-                        notify("⚔️ 멀티플레이가 시작되었습니다! HOST", 150);
+            // The matchmaking queue lives only in the match server's memory, so a
+            // server restart/redeploy silently drops it — without a client-side
+            // timeout the player would otherwise wait here forever with no feedback.
+            const float MATCHMAKING_TIMEOUT_FRAMES = 90.0f * TARGET_FPS;
+            if (mpSearchTimer >= MATCHMAKING_TIMEOUT_FRAMES) {
+                netClient.cancelMatchmaking(serverIP);
+                mpSearching = false;
+                mpStatus = "❌ 매칭 시간 초과 (서버 응답 없음). 다시 시도해 주세요.";
+                SDL_StartTextInput();
+            } else {
+                std::string role, peerIP, peerNameStr;
+                int peerPort = 9001;
+                if (netClient.pollMatchResult(role, peerIP, peerPort, peerNameStr)) {
+                    mpSearching = false;
+                    peerName = peerNameStr;
+                    mpRole = role;
+                    isMultiplayer = true;
+                    peerActive = false;
+                    SDL_StopTextInput();
+
+                    if (role == "HOST") {
+                        mpStatus = "릴레이 서버 연결 중 (HOST)...";
+                        if (netClient.relayConnect(peerIP, peerPort, netClient.currentSessionId, "HOST", netClient.loggedUser)) {
+                            startGame(1);
+                            state = GameState::PLAYING;
+                            notify("⚔️ 멀티플레이가 시작되었습니다! HOST", 150);
+                        } else {
+                            mpStatus = "❌ 릴레이 서버 연결 실패";
+                            isMultiplayer = false;
+                        }
                     } else {
-                        mpStatus = "❌ 릴레이 서버 연결 실패";
-                        isMultiplayer = false;
-                    }
-                } else {
-                    mpStatus = "릴레이 서버 연결 중 (CLIENT)...";
-                    Sleep(500);
-                    if (netClient.relayConnect(peerIP, peerPort, netClient.currentSessionId, "CLIENT", netClient.loggedUser)) {
-                        startGame(1);
-                        state = GameState::PLAYING;
-                        notify("⚔️ 멀티플레이가 시작되었습니다! CLIENT", 150);
-                    } else {
-                        mpStatus = "❌ 릴레이 서버 연결 실패";
-                        isMultiplayer = false;
+                        mpStatus = "릴레이 서버 연결 중 (CLIENT)...";
+                        Sleep(500);
+                        if (netClient.relayConnect(peerIP, peerPort, netClient.currentSessionId, "CLIENT", netClient.loggedUser)) {
+                            startGame(1);
+                            state = GameState::PLAYING;
+                            notify("⚔️ 멀티플레이가 시작되었습니다! CLIENT", 150);
+                        } else {
+                            mpStatus = "❌ 릴레이 서버 연결 실패";
+                            isMultiplayer = false;
+                        }
                     }
                 }
             }
@@ -415,10 +427,10 @@ public:
                     mpStatus = "서버 연결 대기 중...";
                     SDL_StopTextInput();
                     {
-                        std::string savedUser, savedPass;
-                        if (netClient.loadSession(savedUser, savedPass)) {
+                        std::string savedUser, savedToken;
+                        if (netClient.loadSession(savedUser, savedToken)) {
                             mpStatus = "자동 로그인 중 (Auto-logging in)...";
-                            if (netClient.loginUser(savedUser, savedPass, saveData, serverIP)) {
+                            if (netClient.loginWithToken(savedUser, savedToken, saveData)) {
                                 mpStatus = "자동 로그인 성공!";
                                 totalGold = saveData.gold;
                                 totalDiamonds = saveData.diamonds;
@@ -681,8 +693,8 @@ public:
             return;
         }
 
-        // Level 15 Job select trigger
-        if (player.level == 15 && player.job.empty() && !jobSelectActive) {
+        // Level 15 Job select trigger (>= handles multi-level XP gains that skip past 15 exactly)
+        if (player.level >= 15 && player.job.empty() && !jobSelectActive) {
             triggerJobSelect();
             return;
         }
@@ -861,7 +873,9 @@ public:
                 player.addXP((int)(g.xp * xpMult));
                 g.alive = false;
                 if (player.level > oldLevel) {
-                    triggerLevelup();
+                    for (int lvl = oldLevel; lvl < player.level; lvl++) {
+                        triggerLevelup();
+                    }
                     sound.playSFX("levelup");
                 }
             }
@@ -1037,11 +1051,19 @@ public:
                 notify("Damage Up!", 60);
                 particles.burst(player.pos, Color(255, 200, 50), 10, 4.0f, 30);
                 break;
-            case ItemType::XP_ORB:
+            case ItemType::XP_ORB: {
+                int oldLevel = player.level;
                 player.addXP(30);
                 notify("XP +30", 60);
                 particles.burst(player.pos, Color(200, 100, 255), 10, 4.0f, 30);
+                if (player.level > oldLevel) {
+                    for (int lvl = oldLevel; lvl < player.level; lvl++) {
+                        triggerLevelup();
+                    }
+                    sound.playSFX("levelup");
+                }
                 break;
+            }
             case ItemType::DIAMOND: {
                 int gain = 1;
                 if (gold_mult > 1.0f && randf01() < (gold_mult - 1.0f)) gain++;
@@ -1590,7 +1612,7 @@ public:
         ui.drawText(balBuf, SCREEN_W / 2, 122, 12, Color(255, 230, 80), "center");
         
         auto items = getShopItems();
-        int numItems = (int)items.size();
+        (void)items; // used below via curr_idx
         
         int cw = 350, ch = 60;
         int x_start = 40, x_gap = 370;
@@ -4004,15 +4026,10 @@ public:
             ui.drawRectWithBorder(410, 342, 140, 38, regHover ? Color(55, 65, 110, 230) : Color(30, 38, 70, 200), regHover ? Color(150, 210, 255) : Color(70, 110, 180), 1);
             ui.drawText("회원가입 (Register)", 480, 355, 11, Color(220, 235, 255), "center");
 
-            // Google Login Button
-            bool googleHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 390 && mouseScreen.y <= 428);
-            ui.drawRectWithBorder(250, 390, 300, 38, googleHover ? Color(240, 240, 240) : Color(255, 255, 255), googleHover ? Color(255, 255, 255) : Color(220, 220, 220), 1);
-            ui.drawText("Google 계정으로 로그인 (Google Login)", 400, 403, 10, Color(60, 60, 60), "center");
-
             // Back Button
-            bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 438 && mouseScreen.y <= 476);
-            ui.drawRectWithBorder(250, 438, 300, 38, backHover ? Color(40, 45, 55, 230) : Color(24, 28, 38, 200), backHover ? Color(200, 200, 220) : Color(100, 100, 120), 1);
-            ui.drawText("돌아가기 (Go Back) [ESC]", 400, 451, 10, Color(210, 220, 230), "center");
+            bool backHover = (mouseScreen.x >= 250 && mouseScreen.x <= 550 && mouseScreen.y >= 390 && mouseScreen.y <= 428);
+            ui.drawRectWithBorder(250, 390, 300, 38, backHover ? Color(40, 45, 55, 230) : Color(24, 28, 38, 200), backHover ? Color(200, 200, 220) : Color(100, 100, 120), 1);
+            ui.drawText("돌아가기 (Go Back) [ESC]", 400, 403, 10, Color(210, 220, 230), "center");
 
             ui.drawText("Tab: 필드 이동 (Switch field)  |  타이핑 가능 (Click to type)", SCREEN_W / 2, 483, 9, Color(120, 140, 160), "center");
         } else {
@@ -4161,25 +4178,14 @@ public:
                         mpStatus = "회원가입 실패 (이미 존재하는 ID 등)";
                     }
                 }
-                else if (mx >= 250 && mx <= 550 && my >= 390 && my <= 428) { // Google Login
-                    mpStatus = "구글 인증 대기 중 (브라우저를 확인하세요)...";
-                    if (netClient.loginGoogle(saveData)) {
-                        mpStatus = "구글 로그인 성공!";
-                        totalGold = saveData.gold;
-                        totalDiamonds = saveData.diamonds;
-                        SDL_StopTextInput();
-                    } else {
-                        mpStatus = "❌ 구글 로그인 실패 또는 취소됨";
-                    }
-                }
-                else if (mx >= 250 && mx <= 550 && my >= 438 && my <= 476) { // Back
+                else if (mx >= 250 && mx <= 550 && my >= 390 && my <= 428) { // Back
                     SDL_StopTextInput();
                     state = GameState::MENU;
                     mpStatus = "";
                 }
             } else {
                 if (mpSearching) {
-                    if (mx >= 250 && mx <= 550 && my >= 320 && my <= 365) { // Cancel Match
+                    if (mx >= 250 && mx <= 550 && my >= 330 && my <= 375) { // Cancel Match
                         netClient.cancelMatchmaking(serverIP);
                         mpSearching = false;
                         mpStatus = "매치메이킹 취소됨";

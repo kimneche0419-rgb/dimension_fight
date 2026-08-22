@@ -41,7 +41,8 @@ public:
         for (auto& n : nebulae) {
             float px = std::fmod(n.x - camOff.x * n.parallax, 3000.0f);
             float py = std::fmod(n.y - camOff.y * n.parallax, 3000.0f);
-            if (px < 0) px += 3000; if (py < 0) py += 3000;
+            if (px < 0) px += 3000;
+            if (py < 0) py += 3000;
             for (int ox = -3000; ox <= 3000; ox += 3000) {
                 for (int oy = -3000; oy <= 3000; oy += 3000) {
                     int fx = (int)(px + ox), fy = (int)(py + oy);
@@ -57,7 +58,8 @@ public:
             for (auto& s : layer.stars) {
                 float px = std::fmod(s.x - camOff.x * layer.parallax, 3000.0f);
                 float py = std::fmod(s.y - camOff.y * layer.parallax, 3000.0f);
-                if (px < 0) px += 3000; if (py < 0) py += 3000;
+                if (px < 0) px += 3000;
+                if (py < 0) py += 3000;
                 for (int ox = -3000; ox <= 3000; ox += 3000) {
                     for (int oy = -3000; oy <= 3000; oy += 3000) {
                         int fx = (int)(px + ox), fy = (int)(py + oy);

@@ -2,6 +2,9 @@ import asyncio
 import os
 import uuid
 import traceback
+import hmac
+import hashlib
+import time
 
 # Queues for matchmaking: mode -> list of (reader, writer, username)
 queues = {
@@ -11,6 +14,23 @@ queues = {
 
 RELAY_HOST = os.environ.get("RELAY_HOST", "127.0.0.1")
 RELAY_PORT = int(os.environ.get("RELAY_PORT", 9002))
+
+# Must match railway-auth's AUTH_SHARED_SECRET so tokens it issues verify here.
+AUTH_SHARED_SECRET = os.environ.get("AUTH_SHARED_SECRET", "dev-insecure-shared-secret-change-me")
+
+def verify_session_token(username: str, token: str) -> bool:
+    try:
+        tok_user, expiry_str, sig = token.split(".", 2)
+        if tok_user != username:
+            return False
+        expiry = int(expiry_str)
+        if expiry < int(time.time()):
+            return False
+        payload = f"{tok_user}.{expiry}"
+        expected_sig = hmac.new(AUTH_SHARED_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_sig, sig)
+    except Exception:
+        return False
 
 async def matchmaker_loop():
     while True:
@@ -67,10 +87,13 @@ async def handle_client(reader, writer):
 
             if cmd == "MATCH":
                 try:
-                    u, mode = args.split(" ", 1)
-                    username = u
+                    u, token, mode = args.split(" ", 2)
                     mode = mode.lower()
-                    if mode in ["1v1", "coop"]:
+                    if not verify_session_token(u, token):
+                        writer.write(b"MATCH_FAIL Invalid or expired session\n")
+                        await writer.drain()
+                    elif mode in ["1v1", "coop"]:
+                        username = u
                         # Remove existing occurrences
                         remove_from_queues(username)
                         queues[mode].append((reader, writer, username))
@@ -91,16 +114,8 @@ async def handle_client(reader, writer):
                     await writer.drain()
                     print(f"[Match Server] User {username} cancelled search")
                 else:
-                    # Cancel with specific username from args if not set on connection
-                    u = args.strip()
-                    if u:
-                        remove_from_queues(u)
-                        writer.write(b"CANCEL_OK\n")
-                        await writer.drain()
-                        print(f"[Match Server] User {u} cancelled search")
-                    else:
-                        writer.write(b"CANCEL_FAIL Specify username\n")
-                        await writer.drain()
+                    writer.write(b"CANCEL_FAIL Not queued on this connection\n")
+                    await writer.drain()
     except Exception as e:
         print(f"[Match Server] Error handling client {addr}: {e}")
     finally:

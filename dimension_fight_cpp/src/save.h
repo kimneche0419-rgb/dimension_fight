@@ -5,6 +5,7 @@
 #include <map>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 struct SaveData {
     int gold = 0;
@@ -25,6 +26,7 @@ struct SaveData {
     int gacha_pity_count = 0;
 
     // Active configurations
+    std::string username = "";
     std::string player_job = "";
     std::string equipped_fruit = "";
     std::string equipped_ship = "fighter";
@@ -41,8 +43,34 @@ struct SaveData {
     std::map<std::string, int> crafted_items;
     std::map<std::string, int> fruit_awakenings;
 
+    // Escapes '"', '\\' and control characters so future user-supplied strings
+    // (nicknames, guild names, etc.) can't corrupt the flat JSON save format.
+    static std::string escapeJson(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (unsigned char c : s) {
+            switch (c) {
+                case '\"': out += "\\\""; break;
+                case '\\': out += "\\\\"; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default:
+                    if (c < 0x20) {
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "\\u%04x", c);
+                        out += buf;
+                    } else {
+                        out += (char)c;
+                    }
+            }
+        }
+        return out;
+    }
+
     void save(const std::string& path = "save_data_cpp.json") {
-        std::ofstream f(path);
+        std::string tmpPath = path + ".tmp";
+        std::ofstream f(tmpPath);
         if (!f.is_open()) return;
         f << "{\n";
         f << "  \"gold\": " << gold << ",\n";
@@ -55,9 +83,10 @@ struct SaveData {
         f << "  \"high_score\": " << highScore << ",\n";
         f << "  \"gacha_tickets\": " << gacha_tickets << ",\n";
         f << "  \"gacha_pity_count\": " << gacha_pity_count << ",\n";
-        f << "  \"player_job\": \"" << player_job << "\",\n";
-        f << "  \"equipped_fruit\": \"" << equipped_fruit << "\",\n";
-        f << "  \"equipped_ship\": \"" << equipped_ship << "\",\n";
+        f << "  \"username\": \"" << escapeJson(username) << "\",\n";
+        f << "  \"player_job\": \"" << escapeJson(player_job) << "\",\n";
+        f << "  \"equipped_fruit\": \"" << escapeJson(equipped_fruit) << "\",\n";
+        f << "  \"equipped_ship\": \"" << escapeJson(equipped_ship) << "\",\n";
         f << "  \"shield_boost\": " << upgrades[0] << ",\n";
         f << "  \"speed_boost\": " << upgrades[1] << ",\n";
         f << "  \"hp_boost\": " << upgrades[2] << ",\n";
@@ -71,7 +100,7 @@ struct SaveData {
         bool first = true;
         for (auto& [k, v] : owned_skills) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -80,7 +109,7 @@ struct SaveData {
         first = true;
         for (auto& [k, v] : owned_anime_fruits) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -89,7 +118,7 @@ struct SaveData {
         first = true;
         for (auto& [k, v] : job_upgrades) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -98,7 +127,7 @@ struct SaveData {
         first = true;
         for (auto& [k, v] : crafted_items) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -107,7 +136,7 @@ struct SaveData {
         first = true;
         for (auto& [k, v] : fruit_awakenings) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -116,7 +145,7 @@ struct SaveData {
         first = true;
         for (auto& [k, v] : ship_levels) {
             if (!first) f << ", ";
-            f << "\"" << k << "\": " << v;
+            f << "\"" << escapeJson(k) << "\": " << v;
             first = false;
         }
         f << "},\n";
@@ -126,7 +155,7 @@ struct SaveData {
         first = true;
         for (auto& s : equipped_skills) {
             if (!first) f << ", ";
-            f << "\"" << s << "\"";
+            f << "\"" << escapeJson(s) << "\"";
             first = false;
         }
         f << "],\n";
@@ -135,17 +164,73 @@ struct SaveData {
         first = true;
         for (auto& j : unlocked_jobs) {
             if (!first) f << ", ";
-            f << "\"" << j << "\"";
+            f << "\"" << escapeJson(j) << "\"";
             first = false;
         }
         f << "]\n";
 
         f << "}\n";
+        f.close();
+
+        // Keep a rolling backup of the last known-good save before replacing it.
+        std::ifstream existsCheck(path);
+        if (existsCheck.good()) {
+            existsCheck.close();
+            std::remove((path + ".bak").c_str());
+            std::rename(path.c_str(), (path + ".bak").c_str());
+        }
+
+        // Atomically replace the save file so a crash/power-loss mid-write can
+        // never leave a truncated, corrupt save_data_cpp.json behind.
+        std::remove(path.c_str());
+        std::rename(tmpPath.c_str(), path.c_str());
     }
 
     void load(const std::string& path = "save_data_cpp.json") {
         std::ifstream f(path);
         if (!f.is_open()) return;
+
+        // Finds the unescaped closing quote starting search at `from` (a '\\' always
+        // escapes the next character, so an escaped '\"' doesn't end the string early).
+        auto findClosingQuote = [](const std::string& s, size_t from) -> size_t {
+            size_t i = from;
+            while (i < s.size()) {
+                if (s[i] == '\\') { i += 2; continue; }
+                if (s[i] == '\"') return i;
+                i++;
+            }
+            return std::string::npos;
+        };
+
+        auto unescapeJson = [](const std::string& s) -> std::string {
+            std::string out;
+            out.reserve(s.size());
+            for (size_t i = 0; i < s.size(); i++) {
+                if (s[i] == '\\' && i + 1 < s.size()) {
+                    char n = s[i + 1];
+                    switch (n) {
+                        case '\"': out += '\"'; i++; break;
+                        case '\\': out += '\\'; i++; break;
+                        case 'n': out += '\n'; i++; break;
+                        case 'r': out += '\r'; i++; break;
+                        case 't': out += '\t'; i++; break;
+                        case 'u':
+                            if (i + 5 < s.size()) {
+                                try {
+                                    int code = std::stoi(s.substr(i + 2, 4), nullptr, 16);
+                                    out += (char)code;
+                                } catch (...) {}
+                                i += 5;
+                            }
+                            break;
+                        default: out += n; i++; break;
+                    }
+                } else {
+                    out += s[i];
+                }
+            }
+            return out;
+        };
 
         std::string line;
         while (std::getline(f, line)) {
@@ -160,7 +245,8 @@ struct SaveData {
                     if (c == '-' || (c >= '0' && c <= '9')) numStr += c;
                     else if (!numStr.empty()) break;
                 }
-                return numStr.empty() ? 0 : std::stoi(numStr);
+                if (numStr.empty()) return 0;
+                try { return std::stoi(numStr); } catch (...) { return 0; }
             };
 
             auto parseStr = [&](const std::string& key) -> std::string {
@@ -170,9 +256,9 @@ struct SaveData {
                 if (colon == std::string::npos) return "__not_found__";
                 auto q1 = line.find('\"', colon);
                 if (q1 == std::string::npos) return "__not_found__";
-                auto q2 = line.find('\"', q1 + 1);
+                auto q2 = findClosingQuote(line, q1 + 1);
                 if (q2 == std::string::npos) return "__not_found__";
-                return line.substr(q1 + 1, q2 - q1 - 1);
+                return unescapeJson(line.substr(q1 + 1, q2 - q1 - 1));
             };
 
             auto parseMap = [&](const std::string& key) -> std::map<std::string, int> {
@@ -188,9 +274,9 @@ struct SaveData {
                 while (true) {
                     auto q1 = content.find('\"', p);
                     if (q1 == std::string::npos) break;
-                    auto q2 = content.find('\"', q1 + 1);
+                    auto q2 = findClosingQuote(content, q1 + 1);
                     if (q2 == std::string::npos) break;
-                    std::string k = content.substr(q1 + 1, q2 - q1 - 1);
+                    std::string k = unescapeJson(content.substr(q1 + 1, q2 - q1 - 1));
                     
                     auto colon = content.find(':', q2 + 1);
                     if (colon == std::string::npos) break;
@@ -203,7 +289,10 @@ struct SaveData {
                         vStr = content.substr(colon + 1, nextComma - colon - 1);
                     }
                     vStr.erase(std::remove_if(vStr.begin(), vStr.end(), [](unsigned char c) { return std::isspace(c); }), vStr.end());
-                    int val = vStr.empty() ? 0 : std::stoi(vStr);
+                    int val = 0;
+                    if (!vStr.empty()) {
+                        try { val = std::stoi(vStr); } catch (...) { val = 0; }
+                    }
                     res[k] = val;
                     
                     if (nextComma == std::string::npos) break;
@@ -225,9 +314,9 @@ struct SaveData {
                 while (true) {
                     auto q1 = content.find('\"', p);
                     if (q1 == std::string::npos) break;
-                    auto q2 = content.find('\"', q1 + 1);
+                    auto q2 = findClosingQuote(content, q1 + 1);
                     if (q2 == std::string::npos) break;
-                    std::string item = content.substr(q1 + 1, q2 - q1 - 1);
+                    std::string item = unescapeJson(content.substr(q1 + 1, q2 - q1 - 1));
                     res.push_back(item);
                     
                     auto nextComma = content.find(',', q2 + 1);
@@ -250,6 +339,7 @@ struct SaveData {
             if ((v = parseVal("gacha_pity_count")) != -99999) gacha_pity_count = v;
 
             std::string s;
+            if ((s = parseStr("username")) != "__not_found__") username = s;
             if ((s = parseStr("player_job")) != "__not_found__") player_job = s;
             if ((s = parseStr("equipped_fruit")) != "__not_found__") equipped_fruit = s;
             if ((s = parseStr("equipped_ship")) != "__not_found__") equipped_ship = s;

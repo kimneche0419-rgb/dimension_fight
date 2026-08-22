@@ -32,6 +32,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // 창/작업 표시줄 아이콘 설정 — icon.ico 로드에 실패하면
+    // exe에 임베드된 리소스 아이콘(resource.rc)이 대신 쓰인다.
+    SDL_Surface* iconSurf = IMG_Load("icon.ico");
+    if (!iconSurf) iconSurf = IMG_Load("assets/icon.ico");
+    if (iconSurf) {
+        SDL_SetWindowIcon(window, iconSurf);
+        SDL_FreeSurface(iconSurf);
+    }
+
     // ── Renderer ──
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);

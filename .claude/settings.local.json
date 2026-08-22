@@ -1,8 +1,11 @@
 {
- "enabledMcpjsonServers": [
-  "context7",
-  "sequential-thinking",
-  "moai-lsp"
- ],
- "teammateMode": "auto"
+  "enabledMcpjsonServers": [
+    "context7",
+    "sequential-thinking",
+    "moai-lsp"
+  ],
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "teammateMode": "auto"
 }

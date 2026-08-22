@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(DimensionFight LANGUAGES CXX)
+project(DimensionFight LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,7 @@ set(MSYS2_ROOT "C:/msys64/mingw64")
 # Source files
 set(SOURCES
     src/main.cpp
+    resource.rc
 )
 
 # Headers (for IDE awareness)
